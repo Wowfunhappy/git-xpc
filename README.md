@@ -1,3 +1,17 @@
+I (Wowfunhappy) recompiled this XPC service for his modified copy of Chocolat, because the one that shipped with the app kept crashing with some sort of use-after-free. Then I also updated libgit2 to version 1.3.2 because I figured I might as well.
+
+To compile libgit, make sure cmake can't find the MacPorts copies of openssl and iconv:
+
+sudo mv /opt/local/include/iconv.h /opt/local/include/iconv.h.disabled
+sudo mv /opt/local/include/openssl /opt/local/include/openssl.disabled
+
+Then you can:
+
+cmake .. -DBUILD_SHARED_LIBS=OFF -DTHREADSAFE=ON -DBUILD_CLAR=OFF
+
+
+-----
+
 # git.xpc
 
 Git support for Chocolat.
