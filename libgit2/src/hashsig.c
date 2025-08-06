@@ -4,8 +4,11 @@
  * This file is part of libgit2, distributed under the GNU GPL v2 with
  * a Linking Exception. For full terms see the included COPYING file.
  */
-#include "hashsig.h"
-#include "fileops.h"
+
+#include "common.h"
+
+#include "git2/sys/hashsig.h"
+#include "futils.h"
 #include "util.h"
 
 typedef uint32_t hashsig_t;
@@ -14,7 +17,7 @@ typedef uint64_t hashsig_state;
 #define HASHSIG_SCALE 100
 
 #define HASHSIG_MAX_RUN 80
-#define HASHSIG_HASH_START	0x012345678ABCDEF0LL
+#define HASHSIG_HASH_START	INT64_C(0x012345678ABCDEF0)
 #define HASHSIG_HASH_SHIFT  5
 
 #define HASHSIG_HASH_MIX(S,CH) \
@@ -34,8 +37,8 @@ typedef struct {
 struct git_hashsig {
 	hashsig_heap mins;
 	hashsig_heap maxs;
+	size_t lines;
 	git_hashsig_option_t opt;
-	int considered;
 };
 
 #define HEAP_LCHILD_OF(I) (((I)<<1)+1)
@@ -130,29 +133,29 @@ typedef struct {
 	uint8_t ignore_ch[256];
 } hashsig_in_progress;
 
-static void hashsig_in_progress_init(
+static int hashsig_in_progress_init(
 	hashsig_in_progress *prog, git_hashsig *sig)
 {
 	int i;
 
-	switch (sig->opt) {
-	case GIT_HASHSIG_IGNORE_WHITESPACE:
+	/* no more than one can be set */
+	GIT_ASSERT(!(sig->opt & GIT_HASHSIG_IGNORE_WHITESPACE) ||
+		   !(sig->opt & GIT_HASHSIG_SMART_WHITESPACE));
+
+	if (sig->opt & GIT_HASHSIG_IGNORE_WHITESPACE) {
 		for (i = 0; i < 256; ++i)
 			prog->ignore_ch[i] = git__isspace_nonlf(i);
 		prog->use_ignores = 1;
-		break;
-	case GIT_HASHSIG_SMART_WHITESPACE:
+	} else if (sig->opt & GIT_HASHSIG_SMART_WHITESPACE) {
 		for (i = 0; i < 256; ++i)
 			prog->ignore_ch[i] = git__isspace(i);
 		prog->use_ignores = 1;
-		break;
-	default:
+	} else {
 		memset(prog, 0, sizeof(*prog));
-		break;
 	}
-}
 
-#define HASHSIG_IN_PROGRESS_INIT { 1 }
+	return 0;
+}
 
 static int hashsig_add_hashes(
 	git_hashsig *sig,
@@ -174,12 +177,13 @@ static int hashsig_add_hashes(
 			if (use_ignores)
 				for (; scan < end && git__isspace_nonlf(ch); ch = *scan)
 					++scan;
-			else if (sig->opt != GIT_HASHSIG_NORMAL)
+			else if (sig->opt &
+					 (GIT_HASHSIG_IGNORE_WHITESPACE | GIT_HASHSIG_SMART_WHITESPACE))
 				for (; scan < end && ch == '\r'; ch = *scan)
 					++scan;
 
 			/* peek at next character to decide what to do next */
-			if (sig->opt == GIT_HASHSIG_SMART_WHITESPACE)
+			if (sig->opt & GIT_HASHSIG_SMART_WHITESPACE)
 				use_ignores = (ch == '\n');
 
 			if (scan >= end)
@@ -187,8 +191,10 @@ static int hashsig_add_hashes(
 			++scan;
 
 			/* check run terminator */
-			if (ch == '\n' || ch == '\0')
+			if (ch == '\n' || ch == '\0') {
+				sig->lines++;
 				break;
+			}
 
 			++len;
 			HASHSIG_HASH_MIX(state, ch);
@@ -197,8 +203,6 @@ static int hashsig_add_hashes(
 		if (len > 0) {
 			hashsig_heap_insert(&sig->mins, (hashsig_t)state);
 			hashsig_heap_insert(&sig->maxs, (hashsig_t)state);
-
-			sig->considered++;
 
 			while (scan < end && (*scan == '\n' || !*scan))
 				++scan;
@@ -212,9 +216,10 @@ static int hashsig_add_hashes(
 
 static int hashsig_finalize_hashes(git_hashsig *sig)
 {
-	if (sig->mins.size < HASHSIG_HEAP_MIN_SIZE) {
-		giterr_set(GITERR_INVALID,
-			"File too small for similarity signature calculation");
+	if (sig->mins.size < HASHSIG_HEAP_MIN_SIZE &&
+		!(sig->opt & GIT_HASHSIG_ALLOW_SMALL_FILES)) {
+		git_error_set(GIT_ERROR_INVALID,
+			"file too small for similarity signature calculation");
 		return GIT_EBUFS;
 	}
 
@@ -246,9 +251,10 @@ int git_hashsig_create(
 	int error;
 	hashsig_in_progress prog;
 	git_hashsig *sig = hashsig_alloc(opts);
-	GITERR_CHECK_ALLOC(sig);
+	GIT_ERROR_CHECK_ALLOC(sig);
 
-	hashsig_in_progress_init(&prog, sig);
+	if ((error = hashsig_in_progress_init(&prog, sig)) < 0)
+		return error;
 
 	error = hashsig_add_hashes(sig, (const uint8_t *)buf, buflen, &prog);
 
@@ -273,20 +279,23 @@ int git_hashsig_create_fromfile(
 	int error = 0, fd;
 	hashsig_in_progress prog;
 	git_hashsig *sig = hashsig_alloc(opts);
-	GITERR_CHECK_ALLOC(sig);
+	GIT_ERROR_CHECK_ALLOC(sig);
 
 	if ((fd = git_futils_open_ro(path)) < 0) {
 		git__free(sig);
 		return fd;
 	}
 
-	hashsig_in_progress_init(&prog, sig);
+	if ((error = hashsig_in_progress_init(&prog, sig)) < 0) {
+		p_close(fd);
+		return error;
+	}
 
 	while (!error) {
 		if ((buflen = p_read(fd, buf, sizeof(buf))) <= 0) {
 			if ((error = (int)buflen) < 0)
-				giterr_set(GITERR_OS,
-					"Read error on '%s' calculating similarity hashes", path);
+				git_error_set(GIT_ERROR_OS,
+					"read error on '%s' calculating similarity hashes", path);
 			break;
 		}
 
@@ -315,7 +324,7 @@ static int hashsig_heap_compare(const hashsig_heap *a, const hashsig_heap *b)
 {
 	int matches = 0, i, j, cmp;
 
-	assert(a->cmp == b->cmp);
+	GIT_ASSERT_WITH_RETVAL(a->cmp == b->cmp, 0);
 
 	/* hash heaps are sorted - just look for overlap vs total */
 
@@ -336,12 +345,31 @@ static int hashsig_heap_compare(const hashsig_heap *a, const hashsig_heap *b)
 
 int git_hashsig_compare(const git_hashsig *a, const git_hashsig *b)
 {
+	/* if we have no elements in either file then each file is either
+	 * empty or blank.  if we're ignoring whitespace then the files are
+	 * similar, otherwise they're dissimilar.
+	 */
+	if (a->mins.size == 0 && b->mins.size == 0) {
+		if ((!a->lines && !b->lines) ||
+			(a->opt & GIT_HASHSIG_IGNORE_WHITESPACE))
+			return HASHSIG_SCALE;
+		else
+			return 0;
+	}
+
 	/* if we have fewer than the maximum number of elements, then just use
 	 * one array since the two arrays will be the same
 	 */
-	if (a->mins.size < HASHSIG_HEAP_SIZE)
+	if (a->mins.size < HASHSIG_HEAP_SIZE) {
 		return hashsig_heap_compare(&a->mins, &b->mins);
-	else
-		return (hashsig_heap_compare(&a->mins, &b->mins) +
-				hashsig_heap_compare(&a->maxs, &b->maxs)) / 2;
+	} else {
+		int mins, maxs;
+
+		if ((mins = hashsig_heap_compare(&a->mins, &b->mins)) < 0)
+			return mins;
+		if ((maxs = hashsig_heap_compare(&a->maxs, &b->maxs)) < 0)
+			return maxs;
+
+		return (mins + maxs) / 2;
+	}
 }

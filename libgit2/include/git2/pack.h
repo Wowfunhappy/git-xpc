@@ -9,6 +9,7 @@
 
 #include "common.h"
 #include "oid.h"
+#include "indexer.h"
 
 /**
  * @file git2/pack.h
@@ -52,7 +53,7 @@ typedef enum {
 	GIT_PACKBUILDER_ADDING_OBJECTS = 0,
 	GIT_PACKBUILDER_DELTAFICATION = 1,
 } git_packbuilder_stage_t;
-	
+
 /**
  * Initialize a new packbuilder
  *
@@ -115,10 +116,46 @@ GIT_EXTERN(int) git_packbuilder_insert_tree(git_packbuilder *pb, const git_oid *
 GIT_EXTERN(int) git_packbuilder_insert_commit(git_packbuilder *pb, const git_oid *id);
 
 /**
+ * Insert objects as given by the walk
+ *
+ * Those commits and all objects they reference will be inserted into
+ * the packbuilder.
+ *
+ * @param pb the packbuilder
+ * @param walk the revwalk to use to fill the packbuilder
+ *
+ * @return 0 or an error code
+ */
+GIT_EXTERN(int) git_packbuilder_insert_walk(git_packbuilder *pb, git_revwalk *walk);
+
+/**
+ * Recursively insert an object and its referenced objects
+ *
+ * Insert the object as well as any object it references.
+ *
+ * @param pb the packbuilder
+ * @param id the id of the root object to insert
+ * @param name optional name for the object
+ * @return 0 or an error code
+ */
+GIT_EXTERN(int) git_packbuilder_insert_recur(git_packbuilder *pb, const git_oid *id, const char *name);
+
+/**
+ * Write the contents of the packfile to an in-memory buffer
+ *
+ * The contents of the buffer will become a valid packfile, even though there
+ * will be no attached index
+ *
+ * @param buf Buffer where to write the packfile
+ * @param pb The packbuilder
+ */
+GIT_EXTERN(int) git_packbuilder_write_buf(git_buf *buf, git_packbuilder *pb);
+
+/**
  * Write the new pack and corresponding index file to path.
  *
  * @param pb The packbuilder
- * @param path to the directory where the packfile and index should be stored
+ * @param path Path to the directory where the packfile and index should be stored, or NULL for default location
  * @param mode permissions to use creating a packfile or 0 for defaults
  * @param progress_cb function to call with progress information from the indexer (optional)
  * @param progress_cb_payload payload for the progress callback (optional)
@@ -129,7 +166,7 @@ GIT_EXTERN(int) git_packbuilder_write(
 	git_packbuilder *pb,
 	const char *path,
 	unsigned int mode,
-	git_transfer_progress_callback progress_cb,
+	git_indexer_progress_cb progress_cb,
 	void *progress_cb_payload);
 
 /**
@@ -142,7 +179,18 @@ GIT_EXTERN(int) git_packbuilder_write(
 */
 GIT_EXTERN(const git_oid *) git_packbuilder_hash(git_packbuilder *pb);
 
-typedef int (*git_packbuilder_foreach_cb)(void *buf, size_t size, void *payload);
+/**
+ * Callback used to iterate over packed objects
+ *
+ * @see git_packbuilder_foreach
+ *
+ * @param buf A pointer to the object's data
+ * @param size The size of the underlying object
+ * @param payload Payload passed to git_packbuilder_foreach
+ * @return non-zero to terminate the iteration
+ */
+typedef int GIT_CALLBACK(git_packbuilder_foreach_cb)(void *buf, size_t size, void *payload);
+
 /**
  * Create the new pack and pass each object to the callback
  *
@@ -159,7 +207,7 @@ GIT_EXTERN(int) git_packbuilder_foreach(git_packbuilder *pb, git_packbuilder_for
  * @param pb the packbuilder
  * @return the number of objects in the packfile
  */
-GIT_EXTERN(uint32_t) git_packbuilder_object_count(git_packbuilder *pb);
+GIT_EXTERN(size_t) git_packbuilder_object_count(git_packbuilder *pb);
 
 /**
  * Get the number of objects the packbuilder has already written out
@@ -167,13 +215,13 @@ GIT_EXTERN(uint32_t) git_packbuilder_object_count(git_packbuilder *pb);
  * @param pb the packbuilder
  * @return the number of objects which have already been written
  */
-GIT_EXTERN(uint32_t) git_packbuilder_written(git_packbuilder *pb);
+GIT_EXTERN(size_t) git_packbuilder_written(git_packbuilder *pb);
 
 /** Packbuilder progress notification function */
-typedef int (*git_packbuilder_progress)(
+typedef int GIT_CALLBACK(git_packbuilder_progress)(
 	int stage,
-	unsigned int current,
-	unsigned int total,
+	uint32_t current,
+	uint32_t total,
 	void *payload);
 
 /**

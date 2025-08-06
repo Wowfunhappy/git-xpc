@@ -4,14 +4,16 @@
  * This file is part of libgit2, distributed under the GNU GPL v2 with
  * a Linking Exception. For full terms see the included COPYING file.
  */
-#ifndef INCLUDE_dir_h__
-#define INCLUDE_dir_h__
+#ifndef INCLUDE_win32_dir_h__
+#define INCLUDE_win32_dir_h__
 
 #include "common.h"
 
+#include "w32_util.h"
+
 struct git__dirent {
 	int d_ino;
-	git_win32_path_as_utf8 d_name;
+	git_win32_utf8_path d_name;
 };
 
 typedef struct {
@@ -39,4 +41,4 @@ extern int git__closedir(git__DIR *);
 #	define closedir git__closedir
 # endif
 
-#endif /* INCLUDE_dir_h__ */
+#endif

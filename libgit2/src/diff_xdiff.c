@@ -4,11 +4,13 @@
  * This file is part of libgit2, distributed under the GNU GPL v2 with
  * a Linking Exception. For full terms see the included COPYING file.
  */
-#include "common.h"
+
+#include "diff_xdiff.h"
+
+#include "git2/errors.h"
 #include "diff.h"
 #include "diff_driver.h"
-#include "diff_patch.h"
-#include "diff_xdiff.h"
+#include "patch_generate.h"
 
 static int git_xdiff_scan_int(const char **str, int *value)
 {
@@ -28,30 +30,34 @@ static int git_xdiff_parse_hunk(git_diff_hunk *hunk, const char *header)
 {
 	/* expect something of the form "@@ -%d[,%d] +%d[,%d] @@" */
 	if (*header != '@')
-		return -1;
+		goto fail;
 	if (git_xdiff_scan_int(&header, &hunk->old_start) < 0)
-		return -1;
+		goto fail;
 	if (*header == ',') {
 		if (git_xdiff_scan_int(&header, &hunk->old_lines) < 0)
-			return -1;
+			goto fail;
 	} else
 		hunk->old_lines = 1;
 	if (git_xdiff_scan_int(&header, &hunk->new_start) < 0)
-		return -1;
+		goto fail;
 	if (*header == ',') {
 		if (git_xdiff_scan_int(&header, &hunk->new_lines) < 0)
-			return -1;
+			goto fail;
 	} else
 		hunk->new_lines = 1;
 	if (hunk->old_start < 0 || hunk->new_start < 0)
-		return -1;
+		goto fail;
 
 	return 0;
+
+fail:
+	git_error_set(GIT_ERROR_INVALID, "malformed hunk header from xdiff");
+	return -1;
 }
 
 typedef struct {
 	git_xdiff_output *xo;
-	git_patch *patch;
+	git_patch_generated *patch;
 	git_diff_hunk hunk;
 	int old_lineno, new_lineno;
 	mmfile_t xd_old_data, xd_new_data;
@@ -94,7 +100,7 @@ static int diff_update_lines(
 		info->new_lineno += (int)line->num_lines;
 		break;
 	default:
-		giterr_set(GITERR_INVALID, "Unknown diff line origin %02x",
+		git_error_set(GIT_ERROR_INVALID, "unknown diff line origin %02x",
 			(unsigned int)line->origin);
 		return -1;
 	}
@@ -105,10 +111,11 @@ static int diff_update_lines(
 static int git_xdiff_cb(void *priv, mmbuffer_t *bufs, int len)
 {
 	git_xdiff_info *info = priv;
-	git_patch *patch = info->patch;
-	const git_diff_delta *delta = git_patch_get_delta(patch);
-	git_diff_output *output = &info->xo->output;
+	git_patch_generated *patch = info->patch;
+	const git_diff_delta *delta = patch->base.delta;
+	git_patch_generated_output *output = &info->xo->output;
 	git_diff_line line;
+	size_t buffer_len;
 
 	if (len == 1) {
 		output->error = git_xdiff_parse_hunk(&info->hunk, bufs[0].ptr);
@@ -118,12 +125,23 @@ static int git_xdiff_cb(void *priv, mmbuffer_t *bufs, int len)
 		info->hunk.header_len = bufs[0].size;
 		if (info->hunk.header_len >= sizeof(info->hunk.header))
 			info->hunk.header_len = sizeof(info->hunk.header) - 1;
+
+		/* Sanitize the hunk header in case there is invalid Unicode */
+		buffer_len = git_utf8_valid_buf_length(bufs[0].ptr, info->hunk.header_len);
+		/* Sanitizing the hunk header may delete the newline, so add it back again if there is room */
+		if (buffer_len < info->hunk.header_len) {
+			bufs[0].ptr[buffer_len] = '\n';
+			buffer_len += 1;
+			info->hunk.header_len = buffer_len;
+		}
+
 		memcpy(info->hunk.header, bufs[0].ptr, info->hunk.header_len);
 		info->hunk.header[info->hunk.header_len] = '\0';
 
 		if (output->hunk_cb != NULL &&
-			output->hunk_cb(delta, &info->hunk, output->payload))
-			output->error = GIT_EUSER;
+			(output->error = output->hunk_cb(
+				delta, &info->hunk, output->payload)))
+			return output->error;
 
 		info->old_lineno = info->hunk.old_start;
 		info->new_lineno = info->hunk.new_start;
@@ -146,10 +164,9 @@ static int git_xdiff_cb(void *priv, mmbuffer_t *bufs, int len)
 		output->error = diff_update_lines(
 			info, &line, bufs[1].ptr, bufs[1].size);
 
-		if (!output->error &&
-			output->data_cb != NULL &&
-			output->data_cb(delta, &info->hunk, &line, output->payload))
-			output->error = GIT_EUSER;
+		if (!output->error && output->data_cb != NULL)
+			output->error = output->data_cb(
+				delta, &info->hunk, &line, output->payload);
 	}
 
 	if (len == 3 && !output->error) {
@@ -168,16 +185,15 @@ static int git_xdiff_cb(void *priv, mmbuffer_t *bufs, int len)
 		output->error = diff_update_lines(
 			info, &line, bufs[2].ptr, bufs[2].size);
 
-		if (!output->error &&
-			output->data_cb != NULL &&
-			output->data_cb(delta, &info->hunk, &line, output->payload))
-			output->error = GIT_EUSER;
+		if (!output->error && output->data_cb != NULL)
+			output->error = output->data_cb(
+				delta, &info->hunk, &line, output->payload);
 	}
 
 	return output->error;
 }
 
-static int git_xdiff(git_diff_output *output, git_patch *patch)
+static int git_xdiff(git_patch_generated_output *output, git_patch_generated *patch)
 {
 	git_xdiff_output *xo = (git_xdiff_output *)output;
 	git_xdiff_info info;
@@ -190,7 +206,7 @@ static int git_xdiff(git_diff_output *output, git_patch *patch)
 	xo->callback.priv = &info;
 
 	git_diff_find_context_init(
-		&xo->config.find_func, &findctxt, git_patch__driver(patch));
+		&xo->config.find_func, &findctxt, git_patch_generated_driver(patch));
 	xo->config.find_func_priv = &findctxt;
 
 	if (xo->config.find_func != NULL)
@@ -202,8 +218,14 @@ static int git_xdiff(git_diff_output *output, git_patch *patch)
 	 * updates are needed to xo->params.flags
 	 */
 
-	git_patch__old_data(&info.xd_old_data.ptr, &info.xd_old_data.size, patch);
-	git_patch__new_data(&info.xd_new_data.ptr, &info.xd_new_data.size, patch);
+	git_patch_generated_old_data(&info.xd_old_data.ptr, &info.xd_old_data.size, patch);
+	git_patch_generated_new_data(&info.xd_new_data.ptr, &info.xd_new_data.size, patch);
+
+	if (info.xd_old_data.size > GIT_XDIFF_MAX_SIZE ||
+		info.xd_new_data.size > GIT_XDIFF_MAX_SIZE) {
+		git_error_set(GIT_ERROR_INVALID, "files too large for diff");
+		return -1;
+	}
 
 	xdl_diff(&info.xd_old_data, &info.xd_new_data,
 		&xo->params, &xo->config, &xo->callback);
@@ -219,23 +241,25 @@ void git_xdiff_init(git_xdiff_output *xo, const git_diff_options *opts)
 
 	xo->output.diff_cb = git_xdiff;
 
-	memset(&xo->config, 0, sizeof(xo->config));
 	xo->config.ctxlen = opts ? opts->context_lines : 3;
 	xo->config.interhunkctxlen = opts ? opts->interhunk_lines : 0;
 
-	memset(&xo->params, 0, sizeof(xo->params));
 	if (flags & GIT_DIFF_IGNORE_WHITESPACE)
 		xo->params.flags |= XDF_WHITESPACE_FLAGS;
 	if (flags & GIT_DIFF_IGNORE_WHITESPACE_CHANGE)
 		xo->params.flags |= XDF_IGNORE_WHITESPACE_CHANGE;
 	if (flags & GIT_DIFF_IGNORE_WHITESPACE_EOL)
 		xo->params.flags |= XDF_IGNORE_WHITESPACE_AT_EOL;
+	if (flags & GIT_DIFF_INDENT_HEURISTIC)
+		xo->params.flags |= XDF_INDENT_HEURISTIC;
 
 	if (flags & GIT_DIFF_PATIENCE)
 		xo->params.flags |= XDF_PATIENCE_DIFF;
 	if (flags & GIT_DIFF_MINIMAL)
 		xo->params.flags |= XDF_NEED_MINIMAL;
 
-	memset(&xo->callback, 0, sizeof(xo->callback));
+	if (flags & GIT_DIFF_IGNORE_BLANK_LINES)
+		xo->params.flags |= XDF_IGNORE_BLANK_LINES;
+
 	xo->callback.outf = git_xdiff_cb;
 }

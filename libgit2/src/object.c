@@ -4,81 +4,135 @@
  * This file is part of libgit2, distributed under the GNU GPL v2 with
  * a Linking Exception. For full terms see the included COPYING file.
  */
-#include <stdarg.h>
+
+#include "object.h"
 
 #include "git2/object.h"
 
-#include "common.h"
 #include "repository.h"
 
 #include "commit.h"
+#include "hash.h"
 #include "tree.h"
 #include "blob.h"
+#include "oid.h"
 #include "tag.h"
 
-static const int OBJECT_BASE_SIZE = 4096;
+bool git_object__strict_input_validation = true;
+
+extern int git_odb_hash(git_oid *out, const void *data, size_t len, git_object_t type);
+size_t git_object__size(git_object_t type);
 
 typedef struct {
 	const char	*str;	/* type name string */
 	size_t		size;	/* size in bytes of the object structure */
 
 	int  (*parse)(void *self, git_odb_object *obj);
+	int  (*parse_raw)(void *self, const char *data, size_t size);
 	void (*free)(void *self);
 } git_object_def;
 
 static git_object_def git_objects_table[] = {
-	/* 0 = GIT_OBJ__EXT1 */
-	{ "", 0, NULL, NULL },
+	/* 0 = GIT_OBJECT__EXT1 */
+	{ "", 0, NULL, NULL, NULL },
 
-	/* 1 = GIT_OBJ_COMMIT */
-	{ "commit", sizeof(git_commit), git_commit__parse, git_commit__free },
+	/* 1 = GIT_OBJECT_COMMIT */
+	{ "commit", sizeof(git_commit), git_commit__parse, git_commit__parse_raw, git_commit__free },
 
-	/* 2 = GIT_OBJ_TREE */
-	{ "tree", sizeof(git_tree), git_tree__parse, git_tree__free },
+	/* 2 = GIT_OBJECT_TREE */
+	{ "tree", sizeof(git_tree), git_tree__parse, git_tree__parse_raw, git_tree__free },
 
-	/* 3 = GIT_OBJ_BLOB */
-	{ "blob", sizeof(git_blob), git_blob__parse, git_blob__free },
+	/* 3 = GIT_OBJECT_BLOB */
+	{ "blob", sizeof(git_blob), git_blob__parse, git_blob__parse_raw, git_blob__free },
 
-	/* 4 = GIT_OBJ_TAG */
-	{ "tag", sizeof(git_tag), git_tag__parse, git_tag__free },
+	/* 4 = GIT_OBJECT_TAG */
+	{ "tag", sizeof(git_tag), git_tag__parse, git_tag__parse_raw, git_tag__free },
 
-	/* 5 = GIT_OBJ__EXT2 */
-	{ "", 0, NULL, NULL },
-	/* 6 = GIT_OBJ_OFS_DELTA */
-	{ "OFS_DELTA", 0, NULL, NULL },
-	/* 7 = GIT_OBJ_REF_DELTA */
-	{ "REF_DELTA", 0, NULL, NULL },
+	/* 5 = GIT_OBJECT__EXT2 */
+	{ "", 0, NULL, NULL, NULL },
+	/* 6 = GIT_OBJECT_OFS_DELTA */
+	{ "OFS_DELTA", 0, NULL, NULL, NULL },
+	/* 7 = GIT_OBJECT_REF_DELTA */
+	{ "REF_DELTA", 0, NULL, NULL, NULL },
 };
+
+int git_object__from_raw(
+	git_object **object_out,
+	const char *data,
+	size_t size,
+	git_object_t type)
+{
+	git_object_def *def;
+	git_object *object;
+	size_t object_size;
+	int error;
+
+	GIT_ASSERT_ARG(object_out);
+	*object_out = NULL;
+
+	/* Validate type match */
+	if (type != GIT_OBJECT_BLOB && type != GIT_OBJECT_TREE && type != GIT_OBJECT_COMMIT && type != GIT_OBJECT_TAG) {
+		git_error_set(GIT_ERROR_INVALID, "the requested type is invalid");
+		return GIT_ENOTFOUND;
+	}
+
+	if ((object_size = git_object__size(type)) == 0) {
+		git_error_set(GIT_ERROR_INVALID, "the requested type is invalid");
+		return GIT_ENOTFOUND;
+	}
+
+	/* Allocate and initialize base object */
+	object = git__calloc(1, object_size);
+	GIT_ERROR_CHECK_ALLOC(object);
+	object->cached.flags = GIT_CACHE_STORE_PARSED;
+	object->cached.type = type;
+	if ((error = git_odb_hash(&object->cached.oid, data, size, type)) < 0)
+		return error;
+
+	/* Parse raw object data */
+	def = &git_objects_table[type];
+	GIT_ASSERT(def->free && def->parse_raw);
+
+	if ((error = def->parse_raw(object, data, size)) < 0) {
+		def->free(object);
+		return error;
+	}
+
+	git_cached_obj_incref(object);
+	*object_out = object;
+
+	return 0;
+}
 
 int git_object__from_odb_object(
 	git_object **object_out,
 	git_repository *repo,
 	git_odb_object *odb_obj,
-	git_otype type)
+	git_object_t type)
 {
 	int error;
 	size_t object_size;
 	git_object_def *def;
 	git_object *object = NULL;
 
-	assert(object_out);
+	GIT_ASSERT_ARG(object_out);
 	*object_out = NULL;
 
 	/* Validate type match */
-	if (type != GIT_OBJ_ANY && type != odb_obj->cached.type) {
-		giterr_set(GITERR_INVALID,
-			"The requested type does not match the type in the ODB");
+	if (type != GIT_OBJECT_ANY && type != odb_obj->cached.type) {
+		git_error_set(GIT_ERROR_INVALID,
+			"the requested type does not match the type in the ODB");
 		return GIT_ENOTFOUND;
 	}
 
 	if ((object_size = git_object__size(odb_obj->cached.type)) == 0) {
-		giterr_set(GITERR_INVALID, "The requested type is invalid");
+		git_error_set(GIT_ERROR_INVALID, "the requested type is invalid");
 		return GIT_ENOTFOUND;
 	}
 
 	/* Allocate and initialize base object */
 	object = git__calloc(1, object_size);
-	GITERR_CHECK_ALLOC(object);
+	GIT_ERROR_CHECK_ALLOC(object);
 
 	git_oid_cpy(&object->cached.oid, &odb_obj->cached.oid);
 	object->cached.type = odb_obj->cached.type;
@@ -87,7 +141,7 @@ int git_object__from_odb_object(
 
 	/* Parse raw object data */
 	def = &git_objects_table[odb_obj->cached.type];
-	assert(def->free && def->parse);
+	GIT_ASSERT(def->free && def->parse);
 
 	if ((error = def->parse(object, odb_obj)) < 0)
 		def->free(object);
@@ -99,7 +153,7 @@ int git_object__from_odb_object(
 
 void git_object__free(void *obj)
 {
-	git_otype type = ((git_object *)obj)->cached.type;
+	git_object_t type = ((git_object *)obj)->cached.type;
 
 	if (type < 0 || ((size_t)type) >= ARRAY_SIZE(git_objects_table) ||
 		!git_objects_table[type].free)
@@ -113,17 +167,19 @@ int git_object_lookup_prefix(
 	git_repository *repo,
 	const git_oid *id,
 	size_t len,
-	git_otype type)
+	git_object_t type)
 {
 	git_object *object = NULL;
 	git_odb *odb = NULL;
 	git_odb_object *odb_obj = NULL;
 	int error = 0;
 
-	assert(repo && object_out && id);
+	GIT_ASSERT_ARG(repo);
+	GIT_ASSERT_ARG(object_out);
+	GIT_ASSERT_ARG(id);
 
 	if (len < GIT_OID_MINPREFIXLEN) {
-		giterr_set(GITERR_OBJECT, "Ambiguous lookup - OID prefix is too short");
+		git_error_set(GIT_ERROR_OBJECT, "ambiguous lookup - OID prefix is too short");
 		return GIT_EAMBIGUOUS;
 	}
 
@@ -145,10 +201,10 @@ int git_object_lookup_prefix(
 			if (cached->flags == GIT_CACHE_STORE_PARSED) {
 				object = (git_object *)cached;
 
-				if (type != GIT_OBJ_ANY && type != object->cached.type) {
+				if (type != GIT_OBJECT_ANY && type != object->cached.type) {
 					git_object_free(object);
-					giterr_set(GITERR_INVALID,
-						"The requested type does not match the type in ODB");
+					git_error_set(GIT_ERROR_INVALID,
+						"the requested type does not match the type in the ODB");
 					return GIT_ENOTFOUND;
 				}
 
@@ -157,7 +213,7 @@ int git_object_lookup_prefix(
 			} else if (cached->flags == GIT_CACHE_STORE_RAW) {
 				odb_obj = (git_odb_object *)cached;
 			} else {
-				assert(!"Wrong caching type in the global object cache");
+				GIT_ASSERT(!"Wrong caching type in the global object cache");
 			}
 		} else {
 			/* Object was not found in the cache, let's explore the backends.
@@ -168,13 +224,9 @@ int git_object_lookup_prefix(
 			error = git_odb_read(&odb_obj, odb, id);
 		}
 	} else {
-		git_oid short_oid;
+		git_oid short_oid = {{ 0 }};
 
-		/* We copy the first len*4 bits from id and fill the remaining with 0s */
-		memcpy(short_oid.id, id->id, (len + 1) / 2);
-		if (len % 2)
-			short_oid.id[len / 2] &= 0xF0;
-		memset(short_oid.id + (len + 1) / 2, 0, (GIT_OID_HEXSZ - len) / 2);
+		git_oid__cpy_prefix(&short_oid, id, len);
 
 		/* If len < GIT_OID_HEXSZ (a strict short oid was given), we have
 		 * 2 options :
@@ -199,7 +251,7 @@ int git_object_lookup_prefix(
 	return error;
 }
 
-int git_object_lookup(git_object **object_out, git_repository *repo, const git_oid *id, git_otype type) {
+int git_object_lookup(git_object **object_out, git_repository *repo, const git_oid *id, git_object_t type) {
 	return git_object_lookup_prefix(object_out, repo, id, GIT_OID_HEXSZ, type);
 }
 
@@ -213,23 +265,23 @@ void git_object_free(git_object *object)
 
 const git_oid *git_object_id(const git_object *obj)
 {
-	assert(obj);
+	GIT_ASSERT_ARG_WITH_RETVAL(obj, NULL);
 	return &obj->cached.oid;
 }
 
-git_otype git_object_type(const git_object *obj)
+git_object_t git_object_type(const git_object *obj)
 {
-	assert(obj);
+	GIT_ASSERT_ARG_WITH_RETVAL(obj, GIT_OBJECT_INVALID);
 	return obj->cached.type;
 }
 
 git_repository *git_object_owner(const git_object *obj)
 {
-	assert(obj);
+	GIT_ASSERT_ARG_WITH_RETVAL(obj, NULL);
 	return obj->repo;
 }
 
-const char *git_object_type2string(git_otype type)
+const char *git_object_type2string(git_object_t type)
 {
 	if (type < 0 || ((size_t) type) >= ARRAY_SIZE(git_objects_table))
 		return "";
@@ -237,21 +289,30 @@ const char *git_object_type2string(git_otype type)
 	return git_objects_table[type].str;
 }
 
-git_otype git_object_string2type(const char *str)
+git_object_t git_object_string2type(const char *str)
+{
+	if (!str)
+		return GIT_OBJECT_INVALID;
+
+	return git_object_stringn2type(str, strlen(str));
+}
+
+git_object_t git_object_stringn2type(const char *str, size_t len)
 {
 	size_t i;
 
-	if (!str || !*str)
-		return GIT_OBJ_BAD;
+	if (!str || !len || !*str)
+		return GIT_OBJECT_INVALID;
 
 	for (i = 0; i < ARRAY_SIZE(git_objects_table); i++)
-		if (!strcmp(str, git_objects_table[i].str))
-			return (git_otype)i;
+		if (*git_objects_table[i].str &&
+			!git__prefixncmp(str, len, git_objects_table[i].str))
+			return (git_object_t)i;
 
-	return GIT_OBJ_BAD;
+	return GIT_OBJECT_INVALID;
 }
 
-int git_object_typeisloose(git_otype type)
+int git_object_typeisloose(git_object_t type)
 {
 	if (type < 0 || ((size_t) type) >= ARRAY_SIZE(git_objects_table))
 		return 0;
@@ -259,7 +320,7 @@ int git_object_typeisloose(git_otype type)
 	return (git_objects_table[type].size > 0) ? 1 : 0;
 }
 
-size_t git_object__size(git_otype type)
+size_t git_object__size(git_object_t type)
 {
 	if (type < 0 || ((size_t) type) >= ARRAY_SIZE(git_objects_table))
 		return 0;
@@ -269,27 +330,25 @@ size_t git_object__size(git_otype type)
 
 static int dereference_object(git_object **dereferenced, git_object *obj)
 {
-	git_otype type = git_object_type(obj);
+	git_object_t type = git_object_type(obj);
 
 	switch (type) {
-	case GIT_OBJ_COMMIT:
+	case GIT_OBJECT_COMMIT:
 		return git_commit_tree((git_tree **)dereferenced, (git_commit*)obj);
 
-	case GIT_OBJ_TAG:
+	case GIT_OBJECT_TAG:
 		return git_tag_target(dereferenced, (git_tag*)obj);
 
-	case GIT_OBJ_BLOB:
-		return GIT_ENOTFOUND;
-
-	case GIT_OBJ_TREE:
-		return GIT_EAMBIGUOUS;
+	case GIT_OBJECT_BLOB:
+	case GIT_OBJECT_TREE:
+		return GIT_EPEEL;
 
 	default:
 		return GIT_EINVALIDSPEC;
 	}
 }
 
-static int peel_error(int error, const git_oid *oid, git_otype type)
+static int peel_error(int error, const git_oid *oid, git_object_t type)
 {
 	const char *type_name;
 	char hex_oid[GIT_OID_HEXSZ + 1];
@@ -299,30 +358,60 @@ static int peel_error(int error, const git_oid *oid, git_otype type)
 	git_oid_fmt(hex_oid, oid);
 	hex_oid[GIT_OID_HEXSZ] = '\0';
 
-	giterr_set(GITERR_OBJECT, "The git_object of id '%s' can not be "
-		"successfully peeled into a %s (git_otype=%i).", hex_oid, type_name, type);
+	git_error_set(GIT_ERROR_OBJECT, "the git_object of id '%s' can not be "
+		"successfully peeled into a %s (git_object_t=%i).", hex_oid, type_name, type);
 
 	return error;
+}
+
+static int check_type_combination(git_object_t type, git_object_t target)
+{
+	if (type == target)
+		return 0;
+
+	switch (type) {
+	case GIT_OBJECT_BLOB:
+	case GIT_OBJECT_TREE:
+		/* a blob or tree can never be peeled to anything but themselves */
+		return GIT_EINVALIDSPEC;
+		break;
+	case GIT_OBJECT_COMMIT:
+		/* a commit can only be peeled to a tree */
+		if (target != GIT_OBJECT_TREE && target != GIT_OBJECT_ANY)
+			return GIT_EINVALIDSPEC;
+		break;
+	case GIT_OBJECT_TAG:
+		/* a tag may point to anything, so we let anything through */
+		break;
+	default:
+		return GIT_EINVALIDSPEC;
+	}
+
+	return 0;
 }
 
 int git_object_peel(
 	git_object **peeled,
 	const git_object *object,
-	git_otype target_type)
+	git_object_t target_type)
 {
 	git_object *source, *deref = NULL;
 	int error;
 
-	assert(object && peeled);
+	GIT_ASSERT_ARG(object);
+	GIT_ASSERT_ARG(peeled);
+
+	GIT_ASSERT_ARG(target_type == GIT_OBJECT_TAG ||
+		target_type == GIT_OBJECT_COMMIT ||
+		target_type == GIT_OBJECT_TREE ||
+		target_type == GIT_OBJECT_BLOB ||
+		target_type == GIT_OBJECT_ANY);
+
+	if ((error = check_type_combination(git_object_type(object), target_type)) < 0)
+		return peel_error(error, git_object_id(object), target_type);
 
 	if (git_object_type(object) == target_type)
 		return git_object_dup(peeled, (git_object *)object);
-
-	assert(target_type == GIT_OBJ_TAG ||
-		target_type == GIT_OBJ_COMMIT ||
-		target_type == GIT_OBJ_TREE ||
-		target_type == GIT_OBJ_BLOB ||
-		target_type == GIT_OBJ_ANY);
 
 	source = (git_object *)object;
 
@@ -336,7 +425,7 @@ int git_object_peel(
 			return 0;
 		}
 
-		if (target_type == GIT_OBJ_ANY &&
+		if (target_type == GIT_OBJECT_ANY &&
 			git_object_type(deref) != git_object_type(object))
 		{
 			*peeled = deref;
@@ -369,23 +458,25 @@ int git_object_lookup_bypath(
 		git_object **out,
 		const git_object *treeish,
 		const char *path,
-		git_otype type)
+		git_object_t type)
 {
 	int error = -1;
 	git_tree *tree = NULL;
 	git_tree_entry *entry = NULL;
 
-	assert(out && treeish && path);
+	GIT_ASSERT_ARG(out);
+	GIT_ASSERT_ARG(treeish);
+	GIT_ASSERT_ARG(path);
 
-	if ((error = git_object_peel((git_object**)&tree, treeish, GIT_OBJ_TREE) < 0) ||
+	if ((error = git_object_peel((git_object**)&tree, treeish, GIT_OBJECT_TREE)) < 0 ||
 		 (error = git_tree_entry_bypath(&entry, tree, path)) < 0)
 	{
 		goto cleanup;
 	}
 
-	if (type != GIT_OBJ_ANY && git_tree_entry_type(entry) != type)
+	if (type != GIT_OBJECT_ANY && git_tree_entry_type(entry) != type)
 	{
-		giterr_set(GITERR_OBJECT,
+		git_error_set(GIT_ERROR_OBJECT,
 				"object at path '%s' is not of the asked-for type %d",
 				path, type);
 		error = GIT_EINVALIDSPEC;
@@ -398,4 +489,73 @@ cleanup:
 	git_tree_entry_free(entry);
 	git_tree_free(tree);
 	return error;
+}
+
+int git_object_short_id(git_buf *out, const git_object *obj)
+{
+	git_repository *repo;
+	int len = GIT_ABBREV_DEFAULT, error;
+	git_oid id = {{0}};
+	git_odb *odb;
+
+	GIT_ASSERT_ARG(out);
+	GIT_ASSERT_ARG(obj);
+
+	if ((error = git_buf_sanitize(out)) < 0)
+		return error;
+
+	repo = git_object_owner(obj);
+
+	if ((error = git_repository__configmap_lookup(&len, repo, GIT_CONFIGMAP_ABBREV)) < 0)
+		return error;
+
+	if ((error = git_repository_odb(&odb, repo)) < 0)
+		return error;
+
+	while (len < GIT_OID_HEXSZ) {
+		/* set up short oid */
+		memcpy(&id.id, &obj->cached.oid.id, (len + 1) / 2);
+		if (len & 1)
+			id.id[len / 2] &= 0xf0;
+
+		error = git_odb_exists_prefix(NULL, odb, &id, len);
+		if (error != GIT_EAMBIGUOUS)
+			break;
+
+		git_error_clear();
+		len++;
+	}
+
+	if (!error && !(error = git_buf_grow(out, len + 1))) {
+		git_oid_tostr(out->ptr, len + 1, &id);
+		out->size = len;
+	}
+
+	git_odb_free(odb);
+
+	return error;
+}
+
+bool git_object__is_valid(
+	git_repository *repo, const git_oid *id, git_object_t expected_type)
+{
+	git_odb *odb;
+	git_object_t actual_type;
+	size_t len;
+	int error;
+
+	if (!git_object__strict_input_validation)
+		return true;
+
+	if ((error = git_repository_odb__weakptr(&odb, repo)) < 0 ||
+		(error = git_odb_read_header(&len, &actual_type, odb, id)) < 0)
+		return false;
+
+	if (expected_type != GIT_OBJECT_ANY && expected_type != actual_type) {
+		git_error_set(GIT_ERROR_INVALID,
+			"the requested type does not match the type in the ODB");
+		return false;
+	}
+
+	return true;
 }

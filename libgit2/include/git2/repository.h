@@ -10,6 +10,7 @@
 #include "common.h"
 #include "types.h"
 #include "oid.h"
+#include "buffer.h"
 
 /**
  * @file git2/repository.h
@@ -34,6 +35,17 @@ GIT_BEGIN_DECL
  * @return 0 or an error code
  */
 GIT_EXTERN(int) git_repository_open(git_repository **out, const char *path);
+/**
+ * Open working tree as a repository
+ *
+ * Open the working directory of the working tree as a normal
+ * repository that can then be worked on.
+ *
+ * @param out Output pointer containing opened repository
+ * @param wt Working tree to open
+ * @return 0 or an error code
+ */
+GIT_EXTERN(int) git_repository_open_from_worktree(git_repository **out, git_worktree *wt);
 
 /**
  * Create a "fake" repository to wrap an object database
@@ -58,10 +70,8 @@ GIT_EXTERN(int) git_repository_wrap_odb(git_repository **out, git_odb *odb);
  * The method will automatically detect if the repository is bare
  * (if there is a repository).
  *
- * @param path_out The user allocated buffer which will
- * contain the found path.
- *
- * @param path_size repository_path size
+ * @param out A pointer to a user-allocated git_buf which will contain
+ * the found path.
  *
  * @param start_path The base path where the lookup starts.
  *
@@ -77,31 +87,61 @@ GIT_EXTERN(int) git_repository_wrap_odb(git_repository **out, git_odb *odb);
  * @return 0 or an error code
  */
 GIT_EXTERN(int) git_repository_discover(
-		char *path_out,
-		size_t path_size,
+		git_buf *out,
 		const char *start_path,
 		int across_fs,
 		const char *ceiling_dirs);
 
 /**
  * Option flags for `git_repository_open_ext`.
- *
- * * GIT_REPOSITORY_OPEN_NO_SEARCH - Only open the repository if it can be
- *   immediately found in the start_path.  Do not walk up from the
- *   start_path looking at parent directories.
- * * GIT_REPOSITORY_OPEN_CROSS_FS - Unless this flag is set, open will not
- *   continue searching across filesystem boundaries (i.e. when `st_dev`
- *   changes from the `stat` system call).  (E.g. Searching in a user's home
- *   directory "/home/user/source/" will not return "/.git/" as the found
- *   repo if "/" is a different filesystem than "/home".)
- * * GIT_REPOSITORY_OPEN_BARE - Open repository as a bare repo regardless
- *   of core.bare config, and defer loading config file for faster setup.
- *   Unlike `git_repository_open_bare`, this can follow gitlinks.
  */
 typedef enum {
+	/**
+	 * Only open the repository if it can be immediately found in the
+	 * start_path. Do not walk up from the start_path looking at parent
+	 * directories.
+	 */
 	GIT_REPOSITORY_OPEN_NO_SEARCH = (1 << 0),
+
+	/**
+	 * Unless this flag is set, open will not continue searching across
+	 * filesystem boundaries (i.e. when `st_dev` changes from the `stat`
+	 * system call).  For example, searching in a user's home directory at
+	 * "/home/user/source/" will not return "/.git/" as the found repo if
+	 * "/" is a different filesystem than "/home".
+	 */
 	GIT_REPOSITORY_OPEN_CROSS_FS  = (1 << 1),
+
+	/**
+	 * Open repository as a bare repo regardless of core.bare config, and
+	 * defer loading config file for faster setup.
+	 * Unlike `git_repository_open_bare`, this can follow gitlinks.
+	 */
 	GIT_REPOSITORY_OPEN_BARE      = (1 << 2),
+
+	/**
+	 * Do not check for a repository by appending /.git to the start_path;
+	 * only open the repository if start_path itself points to the git
+	 * directory.
+	 */
+	GIT_REPOSITORY_OPEN_NO_DOTGIT = (1 << 3),
+
+	/**
+	 * Find and open a git repository, respecting the environment variables
+	 * used by the git command-line tools.
+	 * If set, `git_repository_open_ext` will ignore the other flags and
+	 * the `ceiling_dirs` argument, and will allow a NULL `path` to use
+	 * `GIT_DIR` or search from the current directory.
+	 * The search for a repository will respect $GIT_CEILING_DIRECTORIES and
+	 * $GIT_DISCOVERY_ACROSS_FILESYSTEM.  The opened repository will
+	 * respect $GIT_INDEX_FILE, $GIT_NAMESPACE, $GIT_OBJECT_DIRECTORY, and
+	 * $GIT_ALTERNATE_OBJECT_DIRECTORIES.
+	 * In the future, this flag will also cause `git_repository_open_ext`
+	 * to respect $GIT_WORK_TREE and $GIT_COMMON_DIR; currently,
+	 * `git_repository_open_ext` with this flag will error out if either
+	 * $GIT_WORK_TREE or $GIT_COMMON_DIR is set.
+	 */
+	GIT_REPOSITORY_OPEN_FROM_ENV  = (1 << 4),
 } git_repository_open_flag_t;
 
 /**
@@ -112,7 +152,8 @@ typedef enum {
  *        see if a repo at this path could be opened.
  * @param path Path to open as git repository.  If the flags
  *        permit "searching", then this can be a path to a subdirectory
- *        inside the working directory of the repository.
+ *        inside the working directory of the repository. May be NULL if
+ *        flags is GIT_REPOSITORY_OPEN_FROM_ENV.
  * @param flags A combination of the GIT_REPOSITORY_OPEN flags above.
  * @param ceiling_dirs A GIT_PATH_LIST_SEPARATOR delimited list of path
  *        prefixes at which the search for a containing repository should
@@ -178,34 +219,55 @@ GIT_EXTERN(int) git_repository_init(
  *
  * These flags configure extra behaviors to `git_repository_init_ext`.
  * In every case, the default behavior is the zero value (i.e. flag is
- * not set).  Just OR the flag values together for the `flags` parameter
- * when initializing a new repo.  Details of individual values are:
- *
- * * BARE   - Create a bare repository with no working directory.
- * * NO_REINIT - Return an GIT_EEXISTS error if the repo_path appears to
- *        already be an git repository.
- * * NO_DOTGIT_DIR - Normally a "/.git/" will be appended to the repo
- *        path for non-bare repos (if it is not already there), but
- *        passing this flag prevents that behavior.
- * * MKDIR  - Make the repo_path (and workdir_path) as needed.  Init is
- *        always willing to create the ".git" directory even without this
- *        flag.  This flag tells init to create the trailing component of
- *        the repo and workdir paths as needed.
- * * MKPATH - Recursively make all components of the repo and workdir
- *        paths as necessary.
- * * EXTERNAL_TEMPLATE - libgit2 normally uses internal templates to
- *        initialize a new repo.  This flags enables external templates,
- *        looking the "template_path" from the options if set, or the
- *        `init.templatedir` global config if not, or falling back on
- *        "/usr/share/git-core/templates" if it exists.
+ * not set). Just OR the flag values together for the `flags` parameter
+ * when initializing a new repo.
  */
 typedef enum {
+	/**
+	 * Create a bare repository with no working directory.
+	 */
 	GIT_REPOSITORY_INIT_BARE              = (1u << 0),
+
+	/**
+	 * Return an GIT_EEXISTS error if the repo_path appears to already be
+	 * an git repository.
+	 */
 	GIT_REPOSITORY_INIT_NO_REINIT         = (1u << 1),
+
+	/**
+	 * Normally a "/.git/" will be appended to the repo path for
+	 * non-bare repos (if it is not already there), but passing this flag
+	 * prevents that behavior.
+	 */
 	GIT_REPOSITORY_INIT_NO_DOTGIT_DIR     = (1u << 2),
+
+	/**
+	 * Make the repo_path (and workdir_path) as needed. Init is always willing
+	 * to create the ".git" directory even without this flag. This flag tells
+	 * init to create the trailing component of the repo and workdir paths
+	 * as needed.
+	 */
 	GIT_REPOSITORY_INIT_MKDIR             = (1u << 3),
+
+	/**
+	 * Recursively make all components of the repo and workdir paths as
+	 * necessary.
+	 */
 	GIT_REPOSITORY_INIT_MKPATH            = (1u << 4),
+
+	/**
+	 * libgit2 normally uses internal templates to initialize a new repo.
+	 * This flags enables external templates, looking the "template_path" from
+	 * the options if set, or the `init.templatedir` global config if not,
+	 * or falling back on "/usr/share/git-core/templates" if it exists.
+	 */
 	GIT_REPOSITORY_INIT_EXTERNAL_TEMPLATE = (1u << 5),
+
+	/**
+	 * If an alternate workdir is specified, use relative paths for the gitdir
+	 * and core.worktree.
+	 */
+	GIT_REPOSITORY_INIT_RELATIVE_GITLINK  = (1u << 6),
 } git_repository_init_flag_t;
 
 /**
@@ -213,17 +275,23 @@ typedef enum {
  *
  * Set the mode field of the `git_repository_init_options` structure
  * either to the custom mode that you would like, or to one of the
- * following modes:
- *
- * * SHARED_UMASK - Use permissions configured by umask - the default.
- * * SHARED_GROUP - Use "--shared=group" behavior, chmod'ing the new repo
- *        to be group writable and "g+sx" for sticky group assignment.
- * * SHARED_ALL - Use "--shared=all" behavior, adding world readability.
- * * Anything else - Set to custom value.
+ * defined modes.
  */
 typedef enum {
+	/**
+	 * Use permissions configured by umask - the default.
+	 */
 	GIT_REPOSITORY_INIT_SHARED_UMASK = 0,
+
+	/**
+	 * Use "--shared=group" behavior, chmod'ing the new repo to be group
+	 * writable and "g+sx" for sticky group assignment.
+	 */
 	GIT_REPOSITORY_INIT_SHARED_GROUP = 0002775,
+
+	/**
+	 * Use "--shared=all" behavior, adding world readability.
+	 */
 	GIT_REPOSITORY_INIT_SHARED_ALL   = 0002777,
 } git_repository_init_mode_t;
 
@@ -231,43 +299,76 @@ typedef enum {
  * Extended options structure for `git_repository_init_ext`.
  *
  * This contains extra options for `git_repository_init_ext` that enable
- * additional initialization features.  The fields are:
- *
- * * flags - Combination of GIT_REPOSITORY_INIT flags above.
- * * mode  - Set to one of the standard GIT_REPOSITORY_INIT_SHARED_...
- *        constants above, or to a custom value that you would like.
- * * workdir_path - The path to the working dir or NULL for default (i.e.
- *        repo_path parent on non-bare repos).  IF THIS IS RELATIVE PATH,
- *        IT WILL BE EVALUATED RELATIVE TO THE REPO_PATH.  If this is not
- *        the "natural" working directory, a .git gitlink file will be
- *        created here linking to the repo_path.
- * * description - If set, this will be used to initialize the "description"
- *        file in the repository, instead of using the template content.
- * * template_path - When GIT_REPOSITORY_INIT_EXTERNAL_TEMPLATE is set,
- *        this contains the path to use for the template directory.  If
- *        this is NULL, the config or default directory options will be
- *        used instead.
- * * initial_head - The name of the head to point HEAD at.  If NULL, then
- *        this will be treated as "master" and the HEAD ref will be set
- *        to "refs/heads/master".  If this begins with "refs/" it will be
- *        used verbatim; otherwise "refs/heads/" will be prefixed.
- * * origin_url - If this is non-NULL, then after the rest of the
- *        repository initialization is completed, an "origin" remote
- *        will be added pointing to this URL.
+ * additional initialization features.
  */
 typedef struct {
 	unsigned int version;
+
+	/**
+	 * Combination of GIT_REPOSITORY_INIT flags above.
+	 */
 	uint32_t    flags;
+
+	/**
+	 * Set to one of the standard GIT_REPOSITORY_INIT_SHARED_... constants
+	 * above, or to a custom value that you would like.
+	 */
 	uint32_t    mode;
+
+	/**
+	 * The path to the working dir or NULL for default (i.e. repo_path parent
+	 * on non-bare repos). IF THIS IS RELATIVE PATH, IT WILL BE EVALUATED
+	 * RELATIVE TO THE REPO_PATH. If this is not the "natural" working
+	 * directory, a .git gitlink file will be created here linking to the
+	 * repo_path.
+	 */
 	const char *workdir_path;
+
+	/**
+	 * If set, this will be used to initialize the "description" file in the
+	 * repository, instead of using the template content.
+	 */
 	const char *description;
+
+	/**
+	 * When GIT_REPOSITORY_INIT_EXTERNAL_TEMPLATE is set, this contains
+	 * the path to use for the template directory. If this is NULL, the config
+	 * or default directory options will be used instead.
+	 */
 	const char *template_path;
+
+	/**
+	 * The name of the head to point HEAD at. If NULL, then this will be
+	 * treated as "master" and the HEAD ref will be set to "refs/heads/master".
+	 * If this begins with "refs/" it will be used verbatim;
+	 * otherwise "refs/heads/" will be prefixed.
+	 */
 	const char *initial_head;
+
+	/**
+	 * If this is non-NULL, then after the rest of the repository
+	 * initialization is completed, an "origin" remote will be added
+	 * pointing to this URL.
+	 */
 	const char *origin_url;
 } git_repository_init_options;
 
 #define GIT_REPOSITORY_INIT_OPTIONS_VERSION 1
 #define GIT_REPOSITORY_INIT_OPTIONS_INIT {GIT_REPOSITORY_INIT_OPTIONS_VERSION}
+
+/**
+ * Initialize git_repository_init_options structure
+ *
+ * Initializes a `git_repository_init_options` with default values. Equivalent to
+ * creating an instance with `GIT_REPOSITORY_INIT_OPTIONS_INIT`.
+ *
+ * @param opts The `git_repository_init_options` struct to initialize.
+ * @param version The struct version; pass `GIT_REPOSITORY_INIT_OPTIONS_VERSION`.
+ * @return Zero on success; -1 on failure.
+ */
+GIT_EXTERN(int) git_repository_init_options_init(
+	git_repository_init_options *opts,
+	unsigned int version);
 
 /**
  * Create a new Git repository in the given folder with extended controls.
@@ -303,6 +404,17 @@ GIT_EXTERN(int) git_repository_init_ext(
 GIT_EXTERN(int) git_repository_head(git_reference **out, git_repository *repo);
 
 /**
+ * Retrieve the referenced HEAD for the worktree
+ *
+ * @param out pointer to the reference which will be retrieved
+ * @param repo a repository object
+ * @param name name of the worktree to retrieve HEAD for
+ * @return 0 when successful, error-code otherwise
+ */
+GIT_EXTERN(int) git_repository_head_for_worktree(git_reference **out, git_repository *repo,
+	const char *name);
+
+/**
  * Check if a repository's HEAD is detached
  *
  * A repository's HEAD is detached when it points directly to a commit
@@ -313,6 +425,20 @@ GIT_EXTERN(int) git_repository_head(git_reference **out, git_repository *repo);
  * was an error.
  */
 GIT_EXTERN(int) git_repository_head_detached(git_repository *repo);
+
+/**
+ * Check if a worktree's HEAD is detached
+ *
+ * A worktree's HEAD is detached when it points directly to a
+ * commit instead of a branch.
+ *
+ * @param repo a repository object
+ * @param name name of the worktree to retrieve HEAD for
+ * @return 1 if HEAD is detached, 0 if its not; error code if
+ *  there was an error
+ */
+GIT_EXTERN(int) git_repository_head_detached_for_worktree(git_repository *repo,
+	const char *name);
 
 /**
  * Check if the current branch is unborn
@@ -329,14 +455,51 @@ GIT_EXTERN(int) git_repository_head_unborn(git_repository *repo);
 /**
  * Check if a repository is empty
  *
- * An empty repository has just been initialized and contains
- * no references.
+ * An empty repository has just been initialized and contains no references
+ * apart from HEAD, which must be pointing to the unborn master branch.
  *
  * @param repo Repo to test
  * @return 1 if the repository is empty, 0 if it isn't, error code
  * if the repository is corrupted
  */
 GIT_EXTERN(int) git_repository_is_empty(git_repository *repo);
+
+/**
+ * List of items which belong to the git repository layout
+ */
+typedef enum {
+	GIT_REPOSITORY_ITEM_GITDIR,
+	GIT_REPOSITORY_ITEM_WORKDIR,
+	GIT_REPOSITORY_ITEM_COMMONDIR,
+	GIT_REPOSITORY_ITEM_INDEX,
+	GIT_REPOSITORY_ITEM_OBJECTS,
+	GIT_REPOSITORY_ITEM_REFS,
+	GIT_REPOSITORY_ITEM_PACKED_REFS,
+	GIT_REPOSITORY_ITEM_REMOTES,
+	GIT_REPOSITORY_ITEM_CONFIG,
+	GIT_REPOSITORY_ITEM_INFO,
+	GIT_REPOSITORY_ITEM_HOOKS,
+	GIT_REPOSITORY_ITEM_LOGS,
+	GIT_REPOSITORY_ITEM_MODULES,
+	GIT_REPOSITORY_ITEM_WORKTREES,
+	GIT_REPOSITORY_ITEM__LAST
+} git_repository_item_t;
+
+/**
+ * Get the location of a specific repository file or directory
+ *
+ * This function will retrieve the path of a specific repository
+ * item. It will thereby honor things like the repository's
+ * common directory, gitdir, etc. In case a file path cannot
+ * exist for a given item (e.g. the working directory of a bare
+ * repository), GIT_ENOTFOUND is returned.
+ *
+ * @param out Buffer to store the path at
+ * @param repo Repository to get path for
+ * @param item The repository item for which to retrieve the path
+ * @return 0, GIT_ENOTFOUND if the path cannot exist or an error code
+ */
+GIT_EXTERN(int) git_repository_item_path(git_buf *out, const git_repository *repo, git_repository_item_t item);
 
 /**
  * Get the path of this repository
@@ -347,7 +510,7 @@ GIT_EXTERN(int) git_repository_is_empty(git_repository *repo);
  * @param repo A repository object
  * @return the path to the repository
  */
-GIT_EXTERN(const char *) git_repository_path(git_repository *repo);
+GIT_EXTERN(const char *) git_repository_path(const git_repository *repo);
 
 /**
  * Get the path of the working directory for this repository
@@ -358,7 +521,19 @@ GIT_EXTERN(const char *) git_repository_path(git_repository *repo);
  * @param repo A repository object
  * @return the path to the working dir, if it exists
  */
-GIT_EXTERN(const char *) git_repository_workdir(git_repository *repo);
+GIT_EXTERN(const char *) git_repository_workdir(const git_repository *repo);
+
+/**
+ * Get the path of the shared common directory for this repository.
+ * 
+ * If the repository is bare, it is the root directory for the repository.
+ * If the repository is a worktree, it is the parent repo's gitdir.
+ * Otherwise, it is the gitdir.
+ *
+ * @param repo A repository object
+ * @return the path to the common dir
+ */
+GIT_EXTERN(const char *) git_repository_commondir(const git_repository *repo);
 
 /**
  * Set the path to the working directory for this repository
@@ -386,7 +561,15 @@ GIT_EXTERN(int) git_repository_set_workdir(
  * @param repo Repo to test
  * @return 1 if the repository is bare, 0 otherwise.
  */
-GIT_EXTERN(int) git_repository_is_bare(git_repository *repo);
+GIT_EXTERN(int) git_repository_is_bare(const git_repository *repo);
+
+/**
+ * Check if a repository is a linked work tree
+ *
+ * @param repo Repo to test
+ * @return 1 if the repository is a linked work tree, 0 otherwise.
+ */
+GIT_EXTERN(int) git_repository_is_worktree(const git_repository *repo);
 
 /**
  * Get the configuration file for this repository.
@@ -398,11 +581,27 @@ GIT_EXTERN(int) git_repository_is_bare(git_repository *repo);
  * The configuration file must be freed once it's no longer
  * being used by the user.
  *
- * @param out Pointer to store the loaded config file
+ * @param out Pointer to store the loaded configuration
  * @param repo A repository object
  * @return 0, or an error code
  */
 GIT_EXTERN(int) git_repository_config(git_config **out, git_repository *repo);
+
+/**
+ * Get a snapshot of the repository's configuration
+ *
+ * Convenience function to take a snapshot from the repository's
+ * configuration.  The contents of this snapshot will not change,
+ * even if the underlying config files are modified.
+ *
+ * The configuration file must be freed once it's no longer
+ * being used by the user.
+ *
+ * @param out Pointer to store the loaded configuration
+ * @param repo the repository
+ * @return 0, or an error code
+ */
+GIT_EXTERN(int) git_repository_config_snapshot(git_config **out, git_repository *repo);
 
 /**
  * Get the Object Database for this repository.
@@ -464,21 +663,11 @@ GIT_EXTERN(int) git_repository_index(git_index **out, git_repository *repo);
  * Use this function to get the contents of this file. Don't forget to
  * remove the file after you create the commit.
  *
- * If the repository message exists and there are no errors reading it, this
- * returns the bytes needed to store the message in memory (i.e. message
- * file size plus one terminating NUL byte).  That value is returned even if
- * `out` is NULL or `len` is shorter than the necessary size.
- *
- * The `out` buffer will *always* be NUL terminated, even if truncation
- * occurs.
- *
- * @param out Buffer to write data into or NULL to just read required size
- * @param len Length of `out` buffer in bytes
+ * @param out git_buf to write data into
  * @param repo Repository to read prepared message from
- * @return GIT_ENOTFOUND if no message exists, other value < 0 for other
- *         errors, or total bytes in message (may be > `len`) on success
+ * @return 0, GIT_ENOTFOUND if no message exists or an error code
  */
-GIT_EXTERN(int) git_repository_message(char *out, size_t len, git_repository *repo);
+GIT_EXTERN(int) git_repository_message(git_buf *out, git_repository *repo);
 
 /**
  * Remove git's prepared message.
@@ -488,45 +677,74 @@ GIT_EXTERN(int) git_repository_message(char *out, size_t len, git_repository *re
 GIT_EXTERN(int) git_repository_message_remove(git_repository *repo);
 
 /**
- * Remove all the metadata associated with an ongoing git merge, including
- * MERGE_HEAD, MERGE_MSG, etc.
+ * Remove all the metadata associated with an ongoing command like merge,
+ * revert, cherry-pick, etc.  For example: MERGE_HEAD, MERGE_MSG, etc.
  *
  * @param repo A repository object
  * @return 0 on success, or error
  */
-GIT_EXTERN(int) git_repository_merge_cleanup(git_repository *repo);
+GIT_EXTERN(int) git_repository_state_cleanup(git_repository *repo);
 
-typedef int (*git_repository_fetchhead_foreach_cb)(const char *ref_name,
+/**
+ * Callback used to iterate over each FETCH_HEAD entry
+ *
+ * @see git_repository_fetchhead_foreach
+ *
+ * @param ref_name The reference name
+ * @param remote_url The remote URL
+ * @param oid The reference target OID
+ * @param is_merge Was the reference the result of a merge
+ * @param payload Payload passed to git_repository_fetchhead_foreach
+ * @return non-zero to terminate the iteration
+ */
+typedef int GIT_CALLBACK(git_repository_fetchhead_foreach_cb)(const char *ref_name,
 	const char *remote_url,
 	const git_oid *oid,
 	unsigned int is_merge,
 	void *payload);
 
 /**
- * Call callback 'callback' for each entry in the given FETCH_HEAD file.
+ * Invoke 'callback' for each entry in the given FETCH_HEAD file.
+ *
+ * Return a non-zero value from the callback to stop the loop.
  *
  * @param repo A repository object
  * @param callback Callback function
  * @param payload Pointer to callback data (optional)
- * @return 0 on success, GIT_ENOTFOUND, GIT_EUSER or error
+ * @return 0 on success, non-zero callback return value, GIT_ENOTFOUND if
+ *         there is no FETCH_HEAD file, or other error code.
  */
-GIT_EXTERN(int) git_repository_fetchhead_foreach(git_repository *repo,
+GIT_EXTERN(int) git_repository_fetchhead_foreach(
+	git_repository *repo,
 	git_repository_fetchhead_foreach_cb callback,
 	void *payload);
 
-typedef int (*git_repository_mergehead_foreach_cb)(const git_oid *oid,
+/**
+ * Callback used to iterate over each MERGE_HEAD entry
+ *
+ * @see git_repository_mergehead_foreach
+ *
+ * @param oid The merge OID
+ * @param payload Payload passed to git_repository_mergehead_foreach
+ * @return non-zero to terminate the iteration
+ */
+typedef int GIT_CALLBACK(git_repository_mergehead_foreach_cb)(const git_oid *oid,
 	void *payload);
 
 /**
- * If a merge is in progress, call callback 'cb' for each commit ID in the
+ * If a merge is in progress, invoke 'callback' for each commit ID in the
  * MERGE_HEAD file.
+ *
+ * Return a non-zero value from the callback to stop the loop.
  *
  * @param repo A repository object
  * @param callback Callback function
  * @param payload Pointer to callback data (optional)
- * @return 0 on success, GIT_ENOTFOUND, GIT_EUSER or error
+ * @return 0 on success, non-zero callback return value, GIT_ENOTFOUND if
+ *         there is no MERGE_HEAD file, or other error code.
  */
-GIT_EXTERN(int) git_repository_mergehead_foreach(git_repository *repo,
+GIT_EXTERN(int) git_repository_mergehead_foreach(
+	git_repository *repo,
 	git_repository_mergehead_foreach_cb callback,
 	void *payload);
 
@@ -538,21 +756,28 @@ GIT_EXTERN(int) git_repository_mergehead_foreach(git_repository *repo,
  * hash a file in the repository and you want to apply filtering rules (e.g.
  * crlf filters) before generating the SHA, then use this function.
  *
+ * Note: if the repository has `core.safecrlf` set to fail and the
+ * filtering triggers that failure, then this function will return an
+ * error and not calculate the hash of the file.
+ *
  * @param out Output value of calculated SHA
  * @param repo Repository pointer
- * @param path Path to file on disk whose contents should be hashed. If the
- *             repository is not NULL, this can be a relative path.
- * @param type The object type to hash as (e.g. GIT_OBJ_BLOB)
+ * @param path Path to file on disk whose contents should be hashed.  This
+ *             may be an absolute path or a relative path, in which case it
+ *             will be treated as a path within the working directory.
+ * @param type The object type to hash as (e.g. GIT_OBJECT_BLOB)
  * @param as_path The path to use to look up filtering rules. If this is
- *             NULL, then the `path` parameter will be used instead. If
- *             this is passed as the empty string, then no filters will be
- *             applied when calculating the hash.
+ *             an empty string then no filters will be applied when
+ *             calculating the hash. If this is `NULL` and the `path`
+ *             parameter is a file within the repository's working
+ *             directory, then the `path` will be used.
+ * @return 0 on success, or an error code
  */
 GIT_EXTERN(int) git_repository_hashfile(
 	git_oid *out,
 	git_repository *repo,
 	const char *path,
-	git_otype type,
+	git_object_t type,
 	const char *as_path);
 
 /**
@@ -574,8 +799,8 @@ GIT_EXTERN(int) git_repository_hashfile(
  * @return 0 on success, or an error code
  */
 GIT_EXTERN(int) git_repository_set_head(
-	git_repository* repo,
-	const char* refname);
+	git_repository *repo,
+	const char *refname);
 
 /**
  * Make the repository HEAD directly point to the Commit.
@@ -594,8 +819,24 @@ GIT_EXTERN(int) git_repository_set_head(
  * @return 0 on success, or an error code
  */
 GIT_EXTERN(int) git_repository_set_head_detached(
-	git_repository* repo,
-	const git_oid* commitish);
+	git_repository *repo,
+	const git_oid *commitish);
+
+/**
+ * Make the repository HEAD directly point to the Commit.
+ *
+ * This behaves like `git_repository_set_head_detached()` but takes an
+ * annotated commit, which lets you specify which extended sha syntax
+ * string was specified by a user, allowing for more exact reflog
+ * messages.
+ *
+ * See the documentation for `git_repository_set_head_detached()`.
+ *
+ * @see git_repository_set_head_detached
+ */
+GIT_EXTERN(int) git_repository_set_head_detached_from_annotated(
+	git_repository *repo,
+	const git_annotated_commit *commitish);
 
 /**
  * Detach the HEAD.
@@ -615,13 +856,21 @@ GIT_EXTERN(int) git_repository_set_head_detached(
  * branch or an error code
  */
 GIT_EXTERN(int) git_repository_detach_head(
-	git_repository* repo);
+	git_repository *repo);
 
+/**
+ * Repository state
+ *
+ * These values represent possible states for the repository to be in,
+ * based on the current operation which is ongoing.
+ */
 typedef enum {
 	GIT_REPOSITORY_STATE_NONE,
 	GIT_REPOSITORY_STATE_MERGE,
 	GIT_REPOSITORY_STATE_REVERT,
-	GIT_REPOSITORY_STATE_CHERRY_PICK,
+	GIT_REPOSITORY_STATE_REVERT_SEQUENCE,
+	GIT_REPOSITORY_STATE_CHERRYPICK,
+	GIT_REPOSITORY_STATE_CHERRYPICK_SEQUENCE,
 	GIT_REPOSITORY_STATE_BISECT,
 	GIT_REPOSITORY_STATE_REBASE,
 	GIT_REPOSITORY_STATE_REBASE_INTERACTIVE,
@@ -669,6 +918,31 @@ GIT_EXTERN(const char *) git_repository_get_namespace(git_repository *repo);
  * @return 1 if shallow, zero if not
  */
 GIT_EXTERN(int) git_repository_is_shallow(git_repository *repo);
+
+/**
+ * Retrieve the configured identity to use for reflogs
+ *
+ * The memory is owned by the repository and must not be freed by the
+ * user.
+ *
+ * @param name where to store the pointer to the name
+ * @param email where to store the pointer to the email
+ * @param repo the repository
+ */
+GIT_EXTERN(int) git_repository_ident(const char **name, const char **email, const git_repository *repo);
+
+/**
+ * Set the identity to be used for writing reflogs
+ *
+ * If both are set, this name and email will be used to write to the
+ * reflog. Pass NULL to unset. When unset, the identity will be taken
+ * from the repository's configuration.
+ *
+ * @param repo the repository to configure
+ * @param name the name to use for the reflog entries
+ * @param email the email to use for the reflog entries
+ */
+GIT_EXTERN(int) git_repository_set_ident(git_repository *repo, const char *name, const char *email);
 
 /** @} */
 GIT_END_DECL

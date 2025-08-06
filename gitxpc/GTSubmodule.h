@@ -16,7 +16,7 @@
 //
 // These flags are mutually exclusive.
 typedef enum {
-	GTSubmoduleIgnoreReset = GIT_SUBMODULE_IGNORE_RESET,
+	GTSubmoduleIgnoreReset = GIT_SUBMODULE_IGNORE_UNSPECIFIED, // GIT_SUBMODULE_IGNORE_RESET doesn't exist in libgit2 1.3.2
 	GTSubmoduleIgnoreNone = GIT_SUBMODULE_IGNORE_NONE,
 	GTSubmoduleIgnoreUntracked = GIT_SUBMODULE_IGNORE_UNTRACKED,
 	GTSubmoduleIgnoreDirty = GIT_SUBMODULE_IGNORE_DIRTY,

@@ -9,9 +9,20 @@
 
 #include "common.h"
 
+#ifndef GIT_WIN32
+# include <ctype.h>
+#endif
+
+#include "git2/buffer.h"
+
+#include "buffer.h"
+#include "common.h"
+#include "strnlen.h"
+#include "thread.h"
+
 #define ARRAY_SIZE(x) (sizeof(x)/sizeof(x[0]))
 #define bitsizeof(x) (CHAR_BIT * sizeof(x))
-#define MSB(x, bits) ((x) & (~0ULL << (bitsizeof(x) - (bits))))
+#define MSB(x, bits) ((x) & (~UINT64_C(0) << (bitsizeof(x) - (bits))))
 #ifndef min
 # define min(a,b) ((a) < (b) ? (a) : (b))
 #endif
@@ -19,73 +30,27 @@
 # define max(a,b) ((a) > (b) ? (a) : (b))
 #endif
 
-/*
- * Custom memory allocation wrappers
- * that set error code and error message
- * on allocation failure
+#if defined(__GNUC__)
+# define GIT_CONTAINER_OF(ptr, type, member) \
+	__builtin_choose_expr( \
+	    __builtin_offsetof(type, member) == 0 && \
+	    __builtin_types_compatible_p(__typeof__(&((type *) 0)->member), __typeof__(ptr)), \
+		((type *) (ptr)), \
+		(void)0)
+#else
+# define GIT_CONTAINER_OF(ptr, type, member) (type *)(ptr)
+#endif
+
+#define GIT_DATE_RFC2822_SZ  32
+
+/**
+ * Return the length of a constant string.
+ * We are aware that `strlen` performs the same task and is usually
+ * optimized away by the compiler, whilst being safer because it returns
+ * valid values when passed a pointer instead of a constant string; however
+ * this macro will transparently work with wide-char and single-char strings.
  */
-GIT_INLINE(void *) git__malloc(size_t len)
-{
-	void *ptr = malloc(len);
-	if (!ptr) giterr_set_oom();
-	return ptr;
-}
-
-GIT_INLINE(void *) git__calloc(size_t nelem, size_t elsize)
-{
-	void *ptr = calloc(nelem, elsize);
-	if (!ptr) giterr_set_oom();
-	return ptr;
-}
-
-GIT_INLINE(char *) git__strdup(const char *str)
-{
-	char *ptr = strdup(str);
-	if (!ptr) giterr_set_oom();
-	return ptr;
-}
-
-GIT_INLINE(char *) git__strndup(const char *str, size_t n)
-{
-	size_t length = 0;
-	char *ptr;
-
-	while (length < n && str[length])
-		++length;
-
-	ptr = (char*)git__malloc(length + 1);
-
-	if (!ptr)
-		return NULL;
-
-	if (length)
-		memcpy(ptr, str, length);
-
-	ptr[length] = '\0';
-
-	return ptr;
-}
-
-/* NOTE: This doesn't do null or '\0' checking.  Watch those boundaries! */
-GIT_INLINE(char *) git__substrdup(const char *start, size_t n)
-{
-	char *ptr = (char*)git__malloc(n+1);
-	memcpy(ptr, start, n);
-	ptr[n] = '\0';
-	return ptr;
-}
-
-GIT_INLINE(void *) git__realloc(void *ptr, size_t size)
-{
-	void *new_ptr = realloc(ptr, size);
-	if (!new_ptr) giterr_set_oom();
-	return new_ptr;
-}
-
-GIT_INLINE(void) git__free(void *ptr)
-{
-	free(ptr);
-}
+#define CONST_STRLEN(x) ((sizeof(x)/sizeof(x[0])) - 1)
 
 #define STRCMP_CASESELECT(IGNORE_CASE, STR1, STR2) \
 	((IGNORE_CASE) ? strcasecmp((STR1), (STR2)) : strcmp((STR1), (STR2)))
@@ -95,6 +60,8 @@ GIT_INLINE(void) git__free(void *ptr)
 
 extern int git__prefixcmp(const char *str, const char *prefix);
 extern int git__prefixcmp_icase(const char *str, const char *prefix);
+extern int git__prefixncmp(const char *str, size_t str_n, const char *prefix);
+extern int git__prefixncmp_icase(const char *str, size_t str_n, const char *prefix);
 extern int git__suffixcmp(const char *str, const char *suffix);
 
 GIT_INLINE(int) git__signum(int val)
@@ -102,25 +69,12 @@ GIT_INLINE(int) git__signum(int val)
 	return ((val > 0) - (val < 0));
 }
 
-extern int git__strtol32(int32_t *n, const char *buff, const char **end_buf, int base);
-extern int git__strtol64(int64_t *n, const char *buff, const char **end_buf, int base);
+extern int git__strntol32(int32_t *n, const char *buff, size_t buff_len, const char **end_buf, int base);
+extern int git__strntol64(int64_t *n, const char *buff, size_t buff_len, const char **end_buf, int base);
+
 
 extern void git__hexdump(const char *buffer, size_t n);
 extern uint32_t git__hash(const void *key, int len, uint32_t seed);
-
-/** @return true if p fits into the range of a size_t */
-GIT_INLINE(int) git__is_sizet(git_off_t p)
-{
-	size_t r = (size_t)p;
-	return p == (git_off_t)r;
-}
-
-/** @return true if p fits into the range of a uint32_t */
-GIT_INLINE(int) git__is_uint32(size_t p)
-{
-	uint32_t r = (uint32_t)p;
-	return p == (size_t)r;
-}
 
 /* 32-bit cross-platform rotl */
 #ifdef _MSC_VER /* use built-in method in MSVC */
@@ -134,6 +88,17 @@ extern char *git__strsep(char **end, const char *sep);
 
 extern void git__strntolower(char *str, size_t len);
 extern void git__strtolower(char *str);
+
+#ifdef GIT_WIN32
+GIT_INLINE(int) git__tolower(int c)
+{
+	return (c >= 'A' && c <= 'Z') ? (c + 32) : c;
+}
+#else
+# define git__tolower(a) tolower(a)
+#endif
+
+extern size_t git__linenlen(const char *buffer, size_t buffer_len);
 
 GIT_INLINE(const char *) git__next_line(const char *s)
 {
@@ -157,6 +122,9 @@ GIT_INLINE(const void *) git__memrchr(const void *s, int c, size_t n)
 	return NULL;
 }
 
+extern const void * git__memmem(const void *haystack, size_t haystacklen,
+				const void *needle, size_t needlelen);
+
 typedef int (*git__tsort_cmp)(const void *a, const void *b);
 
 extern void git__tsort(void **dst, size_t size, git__tsort_cmp cmp);
@@ -168,10 +136,6 @@ extern void git__tsort_r(
 
 extern void git__qsort_r(
 	void *els, size_t nel, size_t elsize, git__sort_r_cmp cmp, void *payload);
-
-extern void git__insertsort_r(
-	void *els, size_t nel, size_t elsize, void *swapel,
-	git__sort_r_cmp cmp, void *payload);
 
 /**
  * @param position If non-NULL, this will be set to the position where the
@@ -193,41 +157,52 @@ extern int git__bsearch_r(
 	void *payload,
 	size_t *position);
 
-extern int git__strcmp_cb(const void *a, const void *b);
+#define git__strcmp strcmp
+#define git__strncmp strncmp
 
-extern int git__strcmp(const char *a, const char *b);
+extern int git__strcmp_cb(const void *a, const void *b);
+extern int git__strcasecmp_cb(const void *a, const void *b);
+
 extern int git__strcasecmp(const char *a, const char *b);
-extern int git__strncmp(const char *a, const char *b, size_t sz);
 extern int git__strncasecmp(const char *a, const char *b, size_t sz);
 
 extern int git__strcasesort_cmp(const char *a, const char *b);
 
-#include "thread-utils.h"
+/*
+ * Compare some NUL-terminated `a` to a possibly non-NUL terminated
+ * `b` of length `b_len`; like `strncmp` but ensuring that
+ * `strlen(a) == b_len` as well.
+ */
+GIT_INLINE(int) git__strlcmp(const char *a, const char *b, size_t b_len)
+{
+	int cmp = strncmp(a, b, b_len);
+	return cmp ? cmp : (int)a[b_len];
+}
 
 typedef struct {
-	git_atomic refcount;
+	git_atomic32 refcount;
 	void *owner;
 } git_refcount;
 
 typedef void (*git_refcount_freeptr)(void *r);
 
 #define GIT_REFCOUNT_INC(r) { \
-	git_atomic_inc(&((git_refcount *)(r))->refcount);	\
+	git_atomic32_inc(&(r)->rc.refcount);	\
 }
 
 #define GIT_REFCOUNT_DEC(_r, do_free) { \
-	git_refcount *r = (git_refcount *)(_r); \
-	int val = git_atomic_dec(&r->refcount); \
+	git_refcount *r = &(_r)->rc; \
+	int val = git_atomic32_dec(&r->refcount); \
 	if (val <= 0 && r->owner == NULL) { do_free(_r); } \
 }
 
 #define GIT_REFCOUNT_OWN(r, o) { \
-	((git_refcount *)(r))->owner = o; \
+	(void)git_atomic_swap((r)->rc.owner, o); \
 }
 
-#define GIT_REFCOUNT_OWNER(r) (((git_refcount *)(r))->owner)
+#define GIT_REFCOUNT_OWNER(r) git_atomic_load((r)->rc.owner)
 
-#define GIT_REFCOUNT_VAL(r) git_atomic_get(&((git_refcount *)(r))->refcount)
+#define GIT_REFCOUNT_VAL(r) git_atomic32_get((r)->rc.refcount)
 
 
 static signed char from_hex[] = {
@@ -257,7 +232,7 @@ GIT_INLINE(int) git__fromhex(char h)
 GIT_INLINE(int) git__ishex(const char *str)
 {
 	unsigned i;
-	for (i=0; i<strlen(str); i++)
+	for (i=0; str[i] != '\0'; i++)
 		if (git__fromhex(str[i]) < 0)
 			return 0;
 	return 1;
@@ -297,17 +272,22 @@ GIT_INLINE(bool) git__isdigit(int c)
 
 GIT_INLINE(bool) git__isspace(int c)
 {
-	return (c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r' || c == '\v' || c == 0x85 /* Unicode CR+LF */);
+	return (c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r' || c == '\v');
 }
 
 GIT_INLINE(bool) git__isspace_nonlf(int c)
 {
-	return (c == ' ' || c == '\t' || c == '\f' || c == '\r' || c == '\v' || c == 0x85 /* Unicode CR+LF */);
+	return (c == ' ' || c == '\t' || c == '\f' || c == '\r' || c == '\v');
 }
 
 GIT_INLINE(bool) git__iswildcard(int c)
 {
 	return (c == '*' || c == '?' || c == '[');
+}
+
+GIT_INLINE(bool) git__isxdigit(int c)
+{
+	return ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'));
 }
 
 /*
@@ -327,6 +307,16 @@ extern int git__parse_bool(int *out, const char *value);
  * - "2003-7-17 08:23"
  */
 extern int git__date_parse(git_time_t *out, const char *date);
+
+/*
+ * Format a git_time as a RFC2822 string
+ *
+ * @param out buffer to store formatted date; a '\\0' terminator will automatically be added.
+ * @param len size of the buffer; should be atleast `GIT_DATE_RFC2822_SZ` in size;
+ * @param date the date to be formatted
+ * @return 0 if successful; -1 on error
+ */
+extern int git__date_rfc2822_fmt(char *out, size_t len, const git_time *date);
 
 /*
  * Unescapes a string in-place.
@@ -357,22 +347,9 @@ GIT_INLINE(void) git__memzero(void *data, size_t size)
 
 GIT_INLINE(double) git__timer(void)
 {
-	/* We need the initial tick count to detect if the tick
-	 * count has rolled over. */
-	static DWORD initial_tick_count = 0;
-
-	/* GetTickCount returns the number of milliseconds that have
+	/* GetTickCount64 returns the number of milliseconds that have
 	 * elapsed since the system was started. */
-	DWORD count = GetTickCount();
-
-	if(initial_tick_count == 0) {
-		initial_tick_count = count;
-	} else if (count < initial_tick_count) {
-		/* The tick count has rolled over - adjust for it. */
-		count = (0xFFFFFFFF - initial_tick_count) + count;
-	}
-
-	return (double) count / (double) 1000;
+	return (double) GetTickCount64() / (double) 1000;
 }
 
 #elif __APPLE__
@@ -390,7 +367,18 @@ GIT_INLINE(double) git__timer(void)
        scaling_factor = (double)info.numer / (double)info.denom;
    }
 
-   return (double)time * scaling_factor / 1.0E-9;
+   return (double)time * scaling_factor / 1.0E9;
+}
+
+#elif defined(__amigaos4__)
+
+#include <proto/timer.h>
+
+GIT_INLINE(double) git__timer(void)
+{
+	struct TimeVal tv;
+	ITimer->GetUpTime(&tv);
+	return (double)tv.Seconds + (double)tv.Microseconds / 1.0E6;
 }
 
 #else
@@ -399,19 +387,27 @@ GIT_INLINE(double) git__timer(void)
 
 GIT_INLINE(double) git__timer(void)
 {
-	struct timespec tp;
+	struct timeval tv;
 
-	if (clock_gettime(CLOCK_MONOTONIC, &tp) == 0) {
-		return (double) tp.tv_sec + (double) tp.tv_nsec / 1E-9;
-	} else {
-		/* Fall back to using gettimeofday */
-		struct timeval tv;
-		struct timezone tz;
-		gettimeofday(&tv, &tz);
-		return (double)tv.tv_sec + (double)tv.tv_usec / 1E-6;
-	}
+#ifdef CLOCK_MONOTONIC
+	struct timespec tp;
+	if (clock_gettime(CLOCK_MONOTONIC, &tp) == 0)
+		return (double) tp.tv_sec + (double) tp.tv_nsec / 1.0E9;
+#endif
+
+	/* Fall back to using gettimeofday */
+	gettimeofday(&tv, NULL);
+	return (double)tv.tv_sec + (double)tv.tv_usec / 1.0E6;
 }
 
 #endif
 
-#endif /* INCLUDE_util_h__ */
+extern int git__getenv(git_buf *out, const char *name);
+
+extern int git__online_cpus(void);
+
+GIT_INLINE(int) git__noop(void) { return 0; }
+
+#include "alloc.h"
+
+#endif

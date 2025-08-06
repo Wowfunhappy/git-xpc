@@ -19,37 +19,34 @@
  * simulate the output of `git blame` and a few of its command line arguments.
  */
 
-struct opts {
+struct blame_opts {
 	char *path;
 	char *commitspec;
 	int C;
 	int M;
 	int start_line;
 	int end_line;
+	int F;
 };
-static void parse_opts(struct opts *o, int argc, char *argv[]);
+static void parse_opts(struct blame_opts *o, int argc, char *argv[]);
 
-int main(int argc, char *argv[])
+int lg2_blame(git_repository *repo, int argc, char *argv[])
 {
-	int i, line, break_on_null_hunk;
+	int line, break_on_null_hunk;
+	git_object_size_t i, rawsize;
 	char spec[1024] = {0};
-	struct opts o = {0};
+	struct blame_opts o = {0};
 	const char *rawdata;
-	git_repository *repo = NULL;
 	git_revspec revspec = {0};
 	git_blame_options blameopts = GIT_BLAME_OPTIONS_INIT;
 	git_blame *blame = NULL;
 	git_blob *blob;
 	git_object *obj;
 
-	git_threads_init();
-
 	parse_opts(&o, argc, argv);
 	if (o.M) blameopts.flags |= GIT_BLAME_TRACK_COPIES_SAME_COMMIT_MOVES;
 	if (o.C) blameopts.flags |= GIT_BLAME_TRACK_COPIES_SAME_COMMIT_COPIES;
-
-	/** Open the repository. */
-	check_lg2(git_repository_open_ext(&repo, ".", 0, NULL), "Couldn't open repository", NULL);
+	if (o.F) blameopts.flags |= GIT_BLAME_FIRST_PARENT;
 
 	/**
 	 * The commit range comes in "commitish" form. Use the rev-parse API to
@@ -57,7 +54,7 @@ int main(int argc, char *argv[])
 	 */
 	if (o.commitspec) {
 		check_lg2(git_revparse(&revspec, repo, o.commitspec), "Couldn't parse commit spec", NULL);
-		if (revspec.flags & GIT_REVPARSE_SINGLE) {
+		if (revspec.flags & GIT_REVSPEC_SINGLE) {
 			git_oid_cpy(&blameopts.newest_commit, git_object_id(revspec.from));
 			git_object_free(revspec.from);
 		} else {
@@ -75,7 +72,7 @@ int main(int argc, char *argv[])
 	 * Get the raw data inside the blob for output. We use the
 	 * `commitish:path/to/file.txt` format to find it.
 	 */
-	if (git_oid_iszero(&blameopts.newest_commit))
+	if (git_oid_is_zero(&blameopts.newest_commit))
 		strcpy(spec, "HEAD");
 	else
 		git_oid_tostr(spec, sizeof(spec), &blameopts.newest_commit);
@@ -87,21 +84,23 @@ int main(int argc, char *argv[])
 	git_object_free(obj);
 
 	rawdata = git_blob_rawcontent(blob);
+	rawsize = git_blob_rawsize(blob);
 
 	/** Produce the output. */
 	line = 1;
 	i = 0;
 	break_on_null_hunk = 0;
-	while (i < git_blob_rawsize(blob)) {
-		const char *eol = strchr(rawdata+i, '\n');
+	while (i < rawsize) {
+		const char *eol = memchr(rawdata + i, '\n', (size_t)(rawsize - i));
 		char oid[10] = {0};
 		const git_blame_hunk *hunk = git_blame_get_hunk_byline(blame, line);
 
-		if (break_on_null_hunk && !hunk) break;
+		if (break_on_null_hunk && !hunk)
+			break;
 
 		if (hunk) {
-			break_on_null_hunk = 1;
 			char sig[128] = {0};
+			break_on_null_hunk = 1;
 
 			git_oid_tostr(oid, 10, &hunk->final_commit_id);
 			snprintf(sig, 30, "%s <%s>", hunk->final_signature->name, hunk->final_signature->email);
@@ -110,8 +109,8 @@ int main(int argc, char *argv[])
 					oid,
 					sig,
 					line,
-					(int)(eol-rawdata-i),
-					rawdata+i);
+					(int)(eol - rawdata - i),
+					rawdata + i);
 		}
 
 		i = (int)(eol - rawdata + 1);
@@ -121,9 +120,6 @@ int main(int argc, char *argv[])
 	/** Cleanup. */
 	git_blob_free(blob);
 	git_blame_free(blame);
-	git_repository_free(repo);
-
-	git_threads_shutdown();
 
 	return 0;
 }
@@ -141,12 +137,13 @@ static void usage(const char *msg, const char *arg)
 	fprintf(stderr, "   -L <n,m>            process only line range n-m, counting from 1\n");
 	fprintf(stderr, "   -M                  find line moves within and across files\n");
 	fprintf(stderr, "   -C                  find line copies within and across files\n");
+	fprintf(stderr, "   -F                  follow only the first parent commits\n");
 	fprintf(stderr, "\n");
 	exit(1);
 }
 
 /** Parse the arguments. */
-static void parse_opts(struct opts *o, int argc, char *argv[])
+static void parse_opts(struct blame_opts *o, int argc, char *argv[])
 {
 	int i;
 	char *bare_args[3] = {0};
@@ -169,6 +166,8 @@ static void parse_opts(struct opts *o, int argc, char *argv[])
 			o->M = 1;
 		else if (!strcasecmp(a, "-C"))
 			o->C = 1;
+		else if (!strcasecmp(a, "-F"))
+			o->F = 1;
 		else if (!strcasecmp(a, "-L")) {
 			i++; a = argv[i];
 			if (i >= argc) fatal("Not enough arguments to -L", NULL);

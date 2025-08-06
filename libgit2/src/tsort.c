@@ -29,8 +29,6 @@ static int binsearch(
 	int l, c, r;
 	void *lx, *cx;
 
-	assert(size > 0);
-
 	l = 0;
 	r = (int)size - 1;
 	c = r >> 1;
@@ -184,7 +182,9 @@ static int check_invariant(struct tsort_run *stack, ssize_t stack_curr)
 static int resize(struct tsort_store *store, size_t new_size)
 {
 	if (store->alloc < new_size) {
-		void **tempstore = git__realloc(store->storage, new_size * sizeof(void *));
+		void **tempstore;
+
+		tempstore = git__reallocarray(store->storage, new_size, sizeof(void *));
 
 		/**
 		 * Do not propagate on OOM; this will abort the sort and
@@ -308,7 +308,6 @@ static ssize_t collapse(void **dst, struct tsort_run *stack, ssize_t stack_curr,
 #define PUSH_NEXT() do {\
 	len = count_run(dst, curr, size, store);\
 	run = minrun;\
-	if (run < minrun) run = minrun;\
 	if (run > (ssize_t)size - curr) run = size - curr;\
 	if (run > len) {\
 		bisort(&dst[curr], len, run, cmp, payload);\

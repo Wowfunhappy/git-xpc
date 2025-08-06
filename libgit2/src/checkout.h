@@ -7,6 +7,8 @@
 #ifndef INCLUDE_checkout_h__
 #define INCLUDE_checkout_h__
 
+#include "common.h"
+
 #include "git2/checkout.h"
 #include "iterator.h"
 
@@ -19,6 +21,7 @@
  */
 extern int git_checkout_iterator(
 	git_iterator *target,
-	const git_checkout_opts *opts);
+	git_index *index,
+	const git_checkout_options *opts);
 
 #endif

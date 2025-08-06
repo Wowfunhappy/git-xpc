@@ -5,37 +5,35 @@
  * a Linking Exception. For full terms see the included COPYING file.
  */
 
-#include "common.h"
+#include "cache.h"
+
 #include "repository.h"
 #include "commit.h"
-#include "thread-utils.h"
+#include "thread.h"
 #include "util.h"
-#include "cache.h"
 #include "odb.h"
 #include "object.h"
 #include "git2/oid.h"
-
-GIT__USE_OIDMAP
 
 bool git_cache__enabled = true;
 ssize_t git_cache__max_storage = (256 * 1024 * 1024);
 git_atomic_ssize git_cache__current_storage = {0};
 
 static size_t git_cache__max_object_size[8] = {
-	0,     /* GIT_OBJ__EXT1 */
-	4096,  /* GIT_OBJ_COMMIT */
-	4096,  /* GIT_OBJ_TREE */
-	0,     /* GIT_OBJ_BLOB */
-	4096,  /* GIT_OBJ_TAG */
-	0,     /* GIT_OBJ__EXT2 */
-	0,     /* GIT_OBJ_OFS_DELTA */
-	0      /* GIT_OBJ_REF_DELTA */
+	0,     /* GIT_OBJECT__EXT1 */
+	4096,  /* GIT_OBJECT_COMMIT */
+	4096,  /* GIT_OBJECT_TREE */
+	0,     /* GIT_OBJECT_BLOB */
+	4096,  /* GIT_OBJECT_TAG */
+	0,     /* GIT_OBJECT__EXT2 */
+	0,     /* GIT_OBJECT_OFS_DELTA */
+	0      /* GIT_OBJECT_REF_DELTA */
 };
 
-int git_cache_set_max_object_size(git_otype type, size_t size)
+int git_cache_set_max_object_size(git_object_t type, size_t size)
 {
 	if (type < 0 || (size_t)type >= ARRAY_SIZE(git_cache__max_object_size)) {
-		giterr_set(GITERR_INVALID, "type out of range");
+		git_error_set(GIT_ERROR_INVALID, "type out of range");
 		return -1;
 	}
 
@@ -43,35 +41,18 @@ int git_cache_set_max_object_size(git_otype type, size_t size)
 	return 0;
 }
 
-void git_cache_dump_stats(git_cache *cache)
-{
-	git_cached_obj *object;
-
-	if (kh_size(cache->map) == 0)
-		return;
-
-	printf("Cache %p: %d items cached, %d bytes\n",
-		cache, kh_size(cache->map), (int)cache->used_memory);
-
-	kh_foreach_value(cache->map, object, {
-		char oid_str[9];
-		printf(" %s%c %s (%d)\n",
-			git_object_type2string(object->type),
-			object->flags == GIT_CACHE_STORE_PARSED ? '*' : ' ',
-			git_oid_tostr(oid_str, sizeof(oid_str), &object->oid),
-			(int)object->size
-		);
-	});
-}
-
 int git_cache_init(git_cache *cache)
 {
 	memset(cache, 0, sizeof(*cache));
-	cache->map = git_oidmap_alloc();
-	if (git_mutex_init(&cache->lock)) {
-		giterr_set(GITERR_OS, "Failed to initialize cache mutex");
+
+	if ((git_oidmap_new(&cache->map)) < 0)
+		return -1;
+
+	if (git_rwlock_init(&cache->lock)) {
+		git_error_set(GIT_ERROR_OS, "failed to initialize cache rwlock");
 		return -1;
 	}
+
 	return 0;
 }
 
@@ -80,68 +61,70 @@ static void clear_cache(git_cache *cache)
 {
 	git_cached_obj *evict = NULL;
 
-	if (kh_size(cache->map) == 0)
+	if (git_cache_size(cache) == 0)
 		return;
 
-	kh_foreach_value(cache->map, evict, {
+	git_oidmap_foreach_value(cache->map, evict, {
 		git_cached_obj_decref(evict);
 	});
 
-	kh_clear(oid, cache->map);
+	git_oidmap_clear(cache->map);
 	git_atomic_ssize_add(&git_cache__current_storage, -cache->used_memory);
 	cache->used_memory = 0;
 }
 
 void git_cache_clear(git_cache *cache)
 {
-	if (git_mutex_lock(&cache->lock) < 0)
+	if (git_rwlock_wrlock(&cache->lock) < 0)
 		return;
 
 	clear_cache(cache);
 
-	git_mutex_unlock(&cache->lock);
+	git_rwlock_wrunlock(&cache->lock);
 }
 
-void git_cache_free(git_cache *cache)
+void git_cache_dispose(git_cache *cache)
 {
 	git_cache_clear(cache);
 	git_oidmap_free(cache->map);
-	git_mutex_free(&cache->lock);
+	git_rwlock_free(&cache->lock);
 	git__memzero(cache, sizeof(*cache));
 }
 
 /* Called with lock */
 static void cache_evict_entries(git_cache *cache)
 {
-	uint32_t seed = rand();
-	size_t evict_count = 8;
+	size_t evict_count = git_cache_size(cache) / 2048, i;
 	ssize_t evicted_memory = 0;
 
+	if (evict_count < 8)
+		evict_count = 8;
+
 	/* do not infinite loop if there's not enough entries to evict  */
-	if (evict_count > kh_size(cache->map)) {
+	if (evict_count > git_cache_size(cache)) {
 		clear_cache(cache);
 		return;
 	}
 
+	i = 0;
 	while (evict_count > 0) {
-		khiter_t pos = seed++ % kh_end(cache->map);
+		git_cached_obj *evict;
+		const git_oid *key;
 
-		if (kh_exist(cache->map, pos)) {
-			git_cached_obj *evict = kh_val(cache->map, pos);
+		if (git_oidmap_iterate((void **) &evict, cache->map, &i, &key) == GIT_ITEROVER)
+			break;
 
-			evict_count--;
-			evicted_memory += evict->size;
-			git_cached_obj_decref(evict);
-
-			kh_del(oid, cache->map, pos);
-		}
+		evict_count--;
+		evicted_memory += evict->size;
+		git_oidmap_delete(cache->map, key);
+		git_cached_obj_decref(evict);
 	}
 
 	cache->used_memory -= evicted_memory;
 	git_atomic_ssize_add(&git_cache__current_storage, -evicted_memory);
 }
 
-static bool cache_should_store(git_otype object_type, size_t object_size)
+static bool cache_should_store(git_object_t object_type, size_t object_size)
 {
 	size_t max_size = git_cache__max_object_size[object_type];
 	return git_cache__enabled && object_size < max_size;
@@ -149,16 +132,12 @@ static bool cache_should_store(git_otype object_type, size_t object_size)
 
 static void *cache_get(git_cache *cache, const git_oid *oid, unsigned int flags)
 {
-	khiter_t pos;
-	git_cached_obj *entry = NULL;
+	git_cached_obj *entry;
 
-	if (!git_cache__enabled || git_mutex_lock(&cache->lock) < 0)
+	if (!git_cache__enabled || git_rwlock_rdlock(&cache->lock) < 0)
 		return NULL;
 
-	pos = kh_get(oid, cache->map, oid);
-	if (pos != kh_end(cache->map)) {
-		entry = kh_val(cache->map, pos);
-
+	if ((entry = git_oidmap_get(cache->map, oid)) != NULL) {
 		if (flags && entry->flags != flags) {
 			entry = NULL;
 		} else {
@@ -166,14 +145,14 @@ static void *cache_get(git_cache *cache, const git_oid *oid, unsigned int flags)
 		}
 	}
 
-	git_mutex_unlock(&cache->lock);
+	git_rwlock_rdunlock(&cache->lock);
 
 	return entry;
 }
 
 static void *cache_store(git_cache *cache, git_cached_obj *entry)
 {
-	khiter_t pos;
+	git_cached_obj *stored_entry;
 
 	git_cached_obj_incref(entry);
 
@@ -185,23 +164,16 @@ static void *cache_store(git_cache *cache, git_cached_obj *entry)
 	if (!cache_should_store(entry->type, entry->size))
 		return entry;
 
-	if (git_mutex_lock(&cache->lock) < 0)
+	if (git_rwlock_wrlock(&cache->lock) < 0)
 		return entry;
 
 	/* soften the load on the cache */
-	if (git_cache__current_storage.val > git_cache__max_storage)
+	if (git_atomic_ssize_get(&git_cache__current_storage) > git_cache__max_storage)
 		cache_evict_entries(cache);
 
-	pos = kh_get(oid, cache->map, &entry->oid);
-
 	/* not found */
-	if (pos == kh_end(cache->map)) {
-		int rval;
-
-		pos = kh_put(oid, cache->map, &entry->oid, &rval);
-		if (rval >= 0) {
-			kh_key(cache->map, pos) = &entry->oid;
-			kh_val(cache->map, pos) = entry;
+	if ((stored_entry = git_oidmap_get(cache->map, &entry->oid)) == NULL) {
+		if (git_oidmap_set(cache->map, &entry->oid, entry) == 0) {
 			git_cached_obj_incref(entry);
 			cache->used_memory += entry->size;
 			git_atomic_ssize_add(&git_cache__current_storage, (ssize_t)entry->size);
@@ -209,25 +181,26 @@ static void *cache_store(git_cache *cache, git_cached_obj *entry)
 	}
 	/* found */
 	else {
-		git_cached_obj *stored_entry = kh_val(cache->map, pos);
-
 		if (stored_entry->flags == entry->flags) {
 			git_cached_obj_decref(entry);
 			git_cached_obj_incref(stored_entry);
 			entry = stored_entry;
 		} else if (stored_entry->flags == GIT_CACHE_STORE_RAW &&
-			entry->flags == GIT_CACHE_STORE_PARSED) {
-			git_cached_obj_decref(stored_entry);
-			git_cached_obj_incref(entry);
-
-			kh_key(cache->map, pos) = &entry->oid;
-			kh_val(cache->map, pos) = entry;
+			   entry->flags == GIT_CACHE_STORE_PARSED) {
+			if (git_oidmap_set(cache->map, &entry->oid, entry) == 0) {
+				git_cached_obj_decref(stored_entry);
+				git_cached_obj_incref(entry);
+			} else {
+				git_cached_obj_decref(entry);
+				git_cached_obj_incref(stored_entry);
+				entry = stored_entry;
+			}
 		} else {
 			/* NO OP */
 		}
 	}
 
-	git_mutex_unlock(&cache->lock);
+	git_rwlock_wrunlock(&cache->lock);
 	return entry;
 }
 
@@ -262,7 +235,7 @@ void git_cached_obj_decref(void *_obj)
 {
 	git_cached_obj *obj = _obj;
 
-	if (git_atomic_dec(&obj->refcount) == 0) {
+	if (git_atomic32_dec(&obj->refcount) == 0) {
 		switch (obj->flags) {
 		case GIT_CACHE_STORE_RAW:
 			git_odb_object__free(_obj);

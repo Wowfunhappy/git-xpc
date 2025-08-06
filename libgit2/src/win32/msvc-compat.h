@@ -4,48 +4,33 @@
  * This file is part of libgit2, distributed under the GNU GPL v2 with
  * a Linking Exception. For full terms see the included COPYING file.
  */
-#ifndef INCLUDE_msvc_compat__
-#define INCLUDE_msvc_compat__
+#ifndef INCLUDE_win32_msvc_compat_h__
+#define INCLUDE_win32_msvc_compat_h__
 
 #if defined(_MSC_VER)
 
-/* access() mode parameter #defines	*/
-#	define F_OK 0 /* existence check */
-#	define W_OK 2 /* write mode check */
-#	define R_OK 4 /* read mode check */
-
-#	define lseek _lseeki64
-#	define stat _stat64
-#	define fstat _fstat64
-
-/* stat: file mode type testing macros */
-#	define _S_IFLNK 0120000
-#	define S_IFLNK _S_IFLNK
-#	define S_IXUSR 00100
-
-#	define S_ISDIR(m)	(((m) & _S_IFMT) == _S_IFDIR)
-#	define S_ISREG(m)	(((m) & _S_IFMT) == _S_IFREG)
-#	define S_ISFIFO(m) (((m) & _S_IFMT) == _S_IFIFO)
-#	define S_ISLNK(m) (((m) & _S_IFMT) == _S_IFLNK)
-
-#	define mode_t unsigned short
-
-/* case-insensitive string comparison */
-#	define strcasecmp	_stricmp
-#	define strncasecmp _strnicmp
-
-/* MSVC doesn't define ssize_t at all */
+typedef unsigned short mode_t;
 typedef SSIZE_T ssize_t;
 
-/* define snprintf using variadic macro support if available */
-#if _MSC_VER >= 1400
-# define snprintf(BUF, SZ, FMT, ...) _snprintf_s(BUF, SZ, _TRUNCATE, FMT, __VA_ARGS__)
+#ifdef _WIN64
+# define SSIZE_MAX _I64_MAX
 #else
-# define snprintf _snprintf
+# define SSIZE_MAX LONG_MAX
 #endif
 
+#define strcasecmp(s1, s2) _stricmp(s1, s2)
+#define strncasecmp(s1, s2, c) _strnicmp(s1, s2, c)
+
 #endif
 
-#define GIT_STDLIB_CALL __cdecl
+/*
+ * Offer GIT_LIBGIT2_CALL for our calling conventions (__cdecl, always).
+ * This is useful for providing callbacks to userspace code.
+ *
+ * Offer GIT_SYSTEM_CALL for the system calling conventions (__stdcall on
+ * Win32).  Useful for providing callbacks to system libraries.
+ */
+#define GIT_LIBGIT2_CALL __cdecl
+#define GIT_SYSTEM_CALL NTAPI
 
-#endif /* INCLUDE_msvc_compat__ */
+#endif

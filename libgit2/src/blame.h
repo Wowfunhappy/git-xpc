@@ -1,8 +1,9 @@
 #ifndef INCLUDE_blame_h__
 #define INCLUDE_blame_h__
 
-#include "git2/blame.h"
 #include "common.h"
+
+#include "git2/blame.h"
 #include "vector.h"
 #include "diff.h"
 #include "array.h"
@@ -31,10 +32,10 @@ typedef struct git_blame__entry {
 	/* the first line of this group in the final image;
 	 * internally all line numbers are 0 based.
 	 */
-	int lno;
+	size_t lno;
 
 	/* how many lines this group has */
-	int num_lines;
+	size_t num_lines;
 
 	/* the commit that introduced this group into the final image */
 	git_blame__origin *suspect;
@@ -51,7 +52,7 @@ typedef struct git_blame__entry {
 	/* the line number of the first line of this group in the
 	 * suspect's file; internally all line numbers are 0 based.
 	 */
-	int s_lno;
+	size_t s_lno;
 
 	/* how significant this entry is -- cached to avoid
 	 * scanning the lines over and over.
@@ -64,8 +65,9 @@ typedef struct git_blame__entry {
 } git_blame__entry;
 
 struct git_blame {
-	const char *path;
+	char *path;
 	git_repository *repository;
+	git_mailmap *mailmap;
 	git_blame_options options;
 
 	git_vector hunks;
@@ -82,7 +84,7 @@ struct git_blame {
 	git_blame__entry *ent;
 	int num_lines;
 	const char *final_buf;
-	git_off_t final_buf_size;
+	size_t final_buf_size;
 };
 
 git_blame *git_blame__alloc(

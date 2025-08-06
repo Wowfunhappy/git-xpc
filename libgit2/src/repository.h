@@ -7,6 +7,8 @@
 #ifndef INCLUDE_repository_h__
 #define INCLUDE_repository_h__
 
+#include "common.h"
+
 #include "git2/common.h"
 #include "git2/oid.h"
 #include "git2/odb.h"
@@ -14,12 +16,13 @@
 #include "git2/object.h"
 #include "git2/config.h"
 
+#include "array.h"
 #include "cache.h"
 #include "refs.h"
 #include "buffer.h"
 #include "object.h"
 #include "attrcache.h"
-#include "strmap.h"
+#include "submodule.h"
 #include "diff_driver.h"
 
 #define DOT_GIT ".git"
@@ -27,31 +30,43 @@
 #define GIT_DIR_MODE 0755
 #define GIT_BARE_DIR_MODE 0777
 
+/* Default DOS-compatible 8.3 "short name" for a git repository, "GIT~1" */
+#define GIT_DIR_SHORTNAME "GIT~1"
+
+extern bool git_repository__fsync_gitdir;
+extern bool git_repository__validate_ownership;
+
 /** Cvar cache identifiers */
 typedef enum {
-	GIT_CVAR_AUTO_CRLF = 0, /* core.autocrlf */
-	GIT_CVAR_EOL,           /* core.eol */
-	GIT_CVAR_SYMLINKS,      /* core.symlinks */
-	GIT_CVAR_IGNORECASE,    /* core.ignorecase */
-	GIT_CVAR_FILEMODE,      /* core.filemode */
-	GIT_CVAR_IGNORESTAT,    /* core.ignorestat */
-	GIT_CVAR_TRUSTCTIME,    /* core.trustctime */
-	GIT_CVAR_ABBREV,        /* core.abbrev */
-	GIT_CVAR_PRECOMPOSE,    /* core.precomposeunicode */
-	GIT_CVAR_CACHE_MAX
-} git_cvar_cached;
+	GIT_CONFIGMAP_AUTO_CRLF = 0,    /* core.autocrlf */
+	GIT_CONFIGMAP_EOL,              /* core.eol */
+	GIT_CONFIGMAP_SYMLINKS,         /* core.symlinks */
+	GIT_CONFIGMAP_IGNORECASE,       /* core.ignorecase */
+	GIT_CONFIGMAP_FILEMODE,         /* core.filemode */
+	GIT_CONFIGMAP_IGNORESTAT,       /* core.ignorestat */
+	GIT_CONFIGMAP_TRUSTCTIME,       /* core.trustctime */
+	GIT_CONFIGMAP_ABBREV,           /* core.abbrev */
+	GIT_CONFIGMAP_PRECOMPOSE,       /* core.precomposeunicode */
+	GIT_CONFIGMAP_SAFE_CRLF,		/* core.safecrlf */
+	GIT_CONFIGMAP_LOGALLREFUPDATES, /* core.logallrefupdates */
+	GIT_CONFIGMAP_PROTECTHFS,       /* core.protectHFS */
+	GIT_CONFIGMAP_PROTECTNTFS,      /* core.protectNTFS */
+	GIT_CONFIGMAP_FSYNCOBJECTFILES, /* core.fsyncObjectFiles */
+	GIT_CONFIGMAP_LONGPATHS,        /* core.longpaths */
+	GIT_CONFIGMAP_CACHE_MAX
+} git_configmap_item;
 
 /**
- * CVAR value enumerations
+ * Configuration map value enumerations
  *
- * These are the values that are actually stored in the cvar cache, instead
- * of their string equivalents. These values are internal and symbolic;
- * make sure that none of them is set to `-1`, since that is the unique
- * identifier for "not cached"
+ * These are the values that are actually stored in the configmap cache,
+ * instead of their string equivalents. These values are internal and
+ * symbolic; make sure that none of them is set to `-1`, since that is
+ * the unique identifier for "not cached"
  */
 typedef enum {
 	/* The value hasn't been loaded from the cache yet */
-	GIT_CVAR_NOT_CACHED = -1,
+	GIT_CONFIGMAP_NOT_CACHED = -1,
 
 	/* core.safecrlf: false, 'fail', 'warn' */
 	GIT_SAFE_CRLF_FALSE = 0,
@@ -76,21 +91,36 @@ typedef enum {
 	GIT_EOL_DEFAULT = GIT_EOL_NATIVE,
 
 	/* core.symlinks: bool */
-	GIT_SYMLINKS_DEFAULT = GIT_CVAR_TRUE,
+	GIT_SYMLINKS_DEFAULT = GIT_CONFIGMAP_TRUE,
 	/* core.ignorecase */
-	GIT_IGNORECASE_DEFAULT = GIT_CVAR_FALSE,
+	GIT_IGNORECASE_DEFAULT = GIT_CONFIGMAP_FALSE,
 	/* core.filemode */
-	GIT_FILEMODE_DEFAULT = GIT_CVAR_TRUE,
+	GIT_FILEMODE_DEFAULT = GIT_CONFIGMAP_TRUE,
 	/* core.ignorestat */
-	GIT_IGNORESTAT_DEFAULT = GIT_CVAR_FALSE,
+	GIT_IGNORESTAT_DEFAULT = GIT_CONFIGMAP_FALSE,
 	/* core.trustctime */
-	GIT_TRUSTCTIME_DEFAULT = GIT_CVAR_TRUE,
+	GIT_TRUSTCTIME_DEFAULT = GIT_CONFIGMAP_TRUE,
 	/* core.abbrev */
 	GIT_ABBREV_DEFAULT = 7,
 	/* core.precomposeunicode */
-	GIT_PRECOMPOSE_DEFAULT = GIT_CVAR_FALSE,
-
-} git_cvar_value;
+	GIT_PRECOMPOSE_DEFAULT = GIT_CONFIGMAP_FALSE,
+	/* core.safecrlf */
+	GIT_SAFE_CRLF_DEFAULT = GIT_CONFIGMAP_FALSE,
+	/* core.logallrefupdates */
+	GIT_LOGALLREFUPDATES_FALSE = GIT_CONFIGMAP_FALSE,
+	GIT_LOGALLREFUPDATES_TRUE = GIT_CONFIGMAP_TRUE,
+	GIT_LOGALLREFUPDATES_UNSET = 2,
+	GIT_LOGALLREFUPDATES_ALWAYS = 3,
+	GIT_LOGALLREFUPDATES_DEFAULT = GIT_LOGALLREFUPDATES_UNSET,
+	/* core.protectHFS */
+	GIT_PROTECTHFS_DEFAULT = GIT_CONFIGMAP_FALSE,
+	/* core.protectNTFS */
+	GIT_PROTECTNTFS_DEFAULT = GIT_CONFIGMAP_TRUE,
+	/* core.fsyncObjectFiles */
+	GIT_FSYNCOBJECTFILES_DEFAULT = GIT_CONFIGMAP_FALSE,
+	/* core.longpaths */
+	GIT_LONGPATHS_DEFAULT = GIT_CONFIGMAP_FALSE,
+} git_configmap_value;
 
 /* internal repository init flags */
 enum {
@@ -107,26 +137,44 @@ struct git_repository {
 	git_index *_index;
 
 	git_cache objects;
-	git_attr_cache attrcache;
-	git_strmap *submodules;
+	git_attr_cache *attrcache;
 	git_diff_driver_registry *diff_drivers;
 
-	char *path_repository;
+	char *gitlink;
+	char *gitdir;
+	char *commondir;
 	char *workdir;
 	char *namespace;
 
+	char *ident_name;
+	char *ident_email;
+
+	git_array_t(git_buf) reserved_names;
+
 	unsigned is_bare:1;
+	unsigned is_worktree:1;
+
 	unsigned int lru_counter;
 
-	git_cvar_value cvar_cache[GIT_CVAR_CACHE_MAX];
+	git_atomic32 attr_session_key;
+
+	intptr_t configmap_cache[GIT_CONFIGMAP_CACHE_MAX];
+	git_strmap *submodule_cache;
 };
 
 GIT_INLINE(git_attr_cache *) git_repository_attr_cache(git_repository *repo)
 {
-	return &repo->attrcache;
+	return repo->attrcache;
 }
 
 int git_repository_head_tree(git_tree **tree, git_repository *repo);
+int git_repository_create_head(const char *git_dir, const char *ref_name);
+
+typedef int (*git_repository_foreach_worktree_cb)(git_repository *, void *);
+
+int git_repository_foreach_worktree(git_repository *repo,
+				    git_repository_foreach_worktree_cb cb,
+				    void *payload);
 
 /*
  * Weak pointers to repository internals.
@@ -141,18 +189,13 @@ int git_repository_refdb__weakptr(git_refdb **out, git_repository *repo);
 int git_repository_index__weakptr(git_index **out, git_repository *repo);
 
 /*
- * CVAR cache
+ * Configuration map cache
  *
  * Efficient access to the most used config variables of a repository.
- * The cache is cleared everytime the config backend is replaced.
+ * The cache is cleared every time the config backend is replaced.
  */
-int git_repository__cvar(int *out, git_repository *repo, git_cvar_cached cvar);
-void git_repository__cvar_cache_clear(git_repository *repo);
-
-/*
- * Submodule cache
- */
-extern void git_submodule_config_free(git_repository *repo);
+int git_repository__configmap_lookup(int *out, git_repository *repo, git_configmap_item item);
+void git_repository__configmap_lookup_cache_clear(git_repository *repo);
 
 GIT_INLINE(int) git_repository__ensure_not_bare(
 	git_repository *repo,
@@ -161,12 +204,54 @@ GIT_INLINE(int) git_repository__ensure_not_bare(
 	if (!git_repository_is_bare(repo))
 		return 0;
 
-	giterr_set(
-		GITERR_REPOSITORY,
-		"Cannot %s. This operation is not allowed against bare repositories.",
+	git_error_set(
+		GIT_ERROR_REPOSITORY,
+		"cannot %s. This operation is not allowed against bare repositories.",
 		operation_name);
 
 	return GIT_EBAREREPO;
 }
+
+int git_repository__set_orig_head(git_repository *repo, const git_oid *orig_head);
+
+int git_repository__cleanup_files(git_repository *repo, const char *files[], size_t files_len);
+
+/* The default "reserved names" for a repository */
+extern git_buf git_repository__reserved_names_win32[];
+extern size_t git_repository__reserved_names_win32_len;
+
+extern git_buf git_repository__reserved_names_posix[];
+extern size_t git_repository__reserved_names_posix_len;
+
+/*
+ * Gets any "reserved names" in the repository.  This will return paths
+ * that should not be allowed in the repository (like ".git") to avoid
+ * conflicting with the repository path, or with alternate mechanisms to
+ * the repository path (eg, "GIT~1").  Every attempt will be made to look
+ * up all possible reserved names - if there was a conflict for the shortname
+ * GIT~1, for example, this function will try to look up the alternate
+ * shortname.  If that fails, this function returns false, but out and outlen
+ * will still be populated with good defaults.
+ */
+bool git_repository__reserved_names(
+	git_buf **out, size_t *outlen, git_repository *repo, bool include_ntfs);
+
+/*
+ * The default branch for the repository; the `init.defaultBranch`
+ * configuration option, if set, or `master` if it is not.
+ */
+int git_repository_initialbranch(git_buf *out, git_repository *repo);
+
+/*
+ * Given a relative `path`, this makes it absolute based on the
+ * repository's working directory.  This will perform validation
+ * to ensure that the path is not longer than MAX_PATH on Windows
+ * (unless `core.longpaths` is set in the repo config).
+ */
+int git_repository_workdir_path(git_buf *out, git_repository *repo, const char *path);
+
+int git_repository__extensions(char ***out, size_t *out_len);
+int git_repository__set_extensions(const char **extensions, size_t len);
+void git_repository__free_extensions(void);
 
 #endif

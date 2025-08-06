@@ -7,9 +7,11 @@
 #ifndef INCLUDE_submodule_h__
 #define INCLUDE_submodule_h__
 
+#include "common.h"
+
 #include "git2/submodule.h"
 #include "git2/repository.h"
-#include "fileops.h"
+#include "futils.h"
 
 /* Notes:
  *
@@ -60,7 +62,9 @@
  * - `update_default` is the update value from the config
  * - `ignore` is a git_submodule_ignore_t value - see gitmodules(5) ignore.
  * - `ignore_default` is the ignore value from the config
- * - `fetch_recurse` is 0 or 1 - see gitmodules(5) fetchRecurseSubmodules.
+ * - `fetch_recurse` is a git_submodule_recurse_t value - see gitmodules(5)
+ *    fetchRecurseSubmodules.
+ * - `fetch_recurse_default` is the recurse value from the config
  *
  * - `repo` is the parent repository that contains this submodule.
  * - `flags` after for internal use, tracking where this submodule has been
@@ -81,11 +85,13 @@ struct git_submodule {
 	char *name;
 	char *path; /* important: may just point to "name" string */
 	char *url;
+	char *branch;
 	git_submodule_update_t update;
 	git_submodule_update_t update_default;
 	git_submodule_ignore_t ignore;
 	git_submodule_ignore_t ignore_default;
-	int fetch_recurse;
+	git_submodule_recurse_t fetch_recurse;
+	git_submodule_recurse_t fetch_recurse_default;
 
 	/* internal information */
 	git_repository *repo;
@@ -110,6 +116,16 @@ enum {
 #define GIT_SUBMODULE_STATUS__CLEAR_INTERNAL(S) \
 	((S) & ~(0xFFFFFFFFu << 20))
 
+/* Initialize an external submodule cache for the provided repo. */
+extern int git_submodule_cache_init(git_strmap **out, git_repository *repo);
+
+/* Release the resources of the submodule cache. */
+extern int git_submodule_cache_free(git_strmap *cache);
+
+/* Submodule lookup with an explicit cache */
+extern int git_submodule__lookup_with_cache(
+	git_submodule **out, git_repository *repo, const char *path, git_strmap *cache);
+
 /* Internal status fn returns status and optionally the various OIDs */
 extern int git_submodule__status(
 	unsigned int *out_status,
@@ -124,15 +140,25 @@ extern int git_submodule_open_bare(
 	git_repository **repo,
 	git_submodule *submodule);
 
-/* Release reference to submodule object - not currently for external use */
-extern void git_submodule_free(git_submodule *sm);
-
 extern int git_submodule_parse_ignore(
 	git_submodule_ignore_t *out, const char *value);
 extern int git_submodule_parse_update(
 	git_submodule_update_t *out, const char *value);
 
-extern const char *git_submodule_ignore_to_str(git_submodule_ignore_t);
-extern const char *git_submodule_update_to_str(git_submodule_update_t);
+extern int git_submodule__map(
+	git_repository *repo,
+	git_strmap *map);
+
+/**
+ * Check whether a submodule's name is valid.
+ *
+ * Check the path against the path validity rules, either the filesystem
+ * defaults (like checkout does) or whichever you want to compare against.
+ *
+ * @param repo the repository which contains the submodule
+ * @param name the name to check
+ * @param flags the `GIT_PATH` flags to use for the check (0 to use filesystem defaults)
+ */
+extern int git_submodule_name_is_valid(git_repository *repo, const char *name, int flags);
 
 #endif

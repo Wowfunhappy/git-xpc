@@ -5,58 +5,66 @@
  * a Linking Exception. For full terms see the included COPYING file.
  */
 
+#include "fetch.h"
+
 #include "git2/oid.h"
 #include "git2/refs.h"
 #include "git2/revwalk.h"
 #include "git2/transport.h"
 
-#include "common.h"
 #include "remote.h"
 #include "refspec.h"
 #include "pack.h"
-#include "fetch.h"
 #include "netops.h"
 #include "repository.h"
 #include "refs.h"
 
-static int maybe_want(git_remote *remote, git_remote_head *head, git_odb *odb, git_refspec *tagspec)
+static int maybe_want(git_remote *remote, git_remote_head *head, git_odb *odb, git_refspec *tagspec, git_remote_autotag_option_t tagopt)
 {
-	int match = 0;
+	int match = 0, valid;
 
-	if (!git_reference_is_valid_name(head->name))
+	if (git_reference_name_is_valid(&valid, head->name) < 0)
+		return -1;
+
+	if (!valid)
 		return 0;
 
-	if (remote->download_tags == GIT_REMOTE_DOWNLOAD_TAGS_ALL) {
+	if (tagopt == GIT_REMOTE_DOWNLOAD_TAGS_ALL) {
 		/*
-		 * If tagopt is --tags, then we only use the default
-		 * tags refspec and ignore the remote's
+		 * If tagopt is --tags, always request tags
+		 * in addition to the remote's refspecs
 		 */
 		if (git_refspec_src_matches(tagspec, head->name))
 			match = 1;
-		else
-			return 0;
-	} else if (git_remote__matching_refspec(remote, head->name))
-			match = 1;
+	}
+
+	if (!match && git_remote__matching_refspec(remote, head->name))
+		match = 1;
 
 	if (!match)
 		return 0;
 
 	/* If we have the object, mark it so we don't ask for it */
-	if (git_odb_exists(odb, &head->oid))
+	if (git_odb_exists(odb, &head->oid)) {
 		head->local = 1;
+	}
 	else
 		remote->need_pack = 1;
 
 	return git_vector_insert(&remote->refs, head);
 }
 
-static int filter_wants(git_remote *remote)
+static int filter_wants(git_remote *remote, const git_fetch_options *opts)
 {
 	git_remote_head **heads;
 	git_refspec tagspec, head;
 	int error = 0;
 	git_odb *odb;
 	size_t i, heads_len;
+	git_remote_autotag_option_t tagopt = remote->download_tags;
+
+	if (opts && opts->download_tags != GIT_REMOTE_DOWNLOAD_TAGS_UNSPECIFIED)
+		tagopt = opts->download_tags;
 
 	git_vector_clear(&remote->refs);
 	if ((error = git_refspec__parse(&tagspec, GIT_REFSPEC_TAGS, true)) < 0)
@@ -73,7 +81,7 @@ static int filter_wants(git_remote *remote)
 			goto cleanup;
 
 		error = git_refspec__dwim_one(&remote->active_refspecs, &head, &remote->refs);
-		git_refspec__free(&head);
+		git_refspec__dispose(&head);
 
 		if (error < 0)
 			goto cleanup;
@@ -86,12 +94,12 @@ static int filter_wants(git_remote *remote)
 		goto cleanup;
 
 	for (i = 0; i < heads_len; i++) {
-		if ((error = maybe_want(remote, heads[i], odb, &tagspec)) < 0)
+		if ((error = maybe_want(remote, heads[i], odb, &tagspec, tagopt)) < 0)
 			break;
 	}
 
 cleanup:
-	git_refspec__free(&tagspec);
+	git_refspec__dispose(&tagspec);
 
 	return error;
 }
@@ -101,12 +109,14 @@ cleanup:
  * them out. When we get an ACK we hide that commit and continue
  * traversing until we're done
  */
-int git_fetch_negotiate(git_remote *remote)
+int git_fetch_negotiate(git_remote *remote, const git_fetch_options *opts)
 {
 	git_transport *t = remote->transport;
-	
-	if (filter_wants(remote) < 0) {
-		giterr_set(GITERR_NET, "Failed to filter the reference list for wants");
+
+	remote->need_pack = 0;
+
+	if (filter_wants(remote, opts) < 0) {
+		git_error_set(GIT_ERROR_NET, "failed to filter the reference list for wants");
 		return -1;
 	}
 
@@ -124,13 +134,33 @@ int git_fetch_negotiate(git_remote *remote)
 		remote->refs.length);
 }
 
-int git_fetch_download_pack(git_remote *remote)
+int git_fetch_download_pack(git_remote *remote, const git_remote_callbacks *callbacks)
 {
 	git_transport *t = remote->transport;
+	git_indexer_progress_cb progress = NULL;
+	void *payload = NULL;
 
-	if(!remote->need_pack)
+	if (!remote->need_pack)
 		return 0;
 
-	return t->download_pack(t, remote->repo, &remote->stats,
-				remote->callbacks.transfer_progress, remote->callbacks.payload);
+	if (callbacks) {
+		progress = callbacks->transfer_progress;
+		payload  = callbacks->payload;
+	}
+
+	return t->download_pack(t, remote->repo, &remote->stats, progress, payload);
 }
+
+int git_fetch_options_init(git_fetch_options *opts, unsigned int version)
+{
+	GIT_INIT_STRUCTURE_FROM_TEMPLATE(
+		opts, version, git_fetch_options, GIT_FETCH_OPTIONS_INIT);
+	return 0;
+}
+
+#ifndef GIT_DEPRECATE_HARD
+int git_fetch_init_options(git_fetch_options *opts, unsigned int version)
+{
+	return git_fetch_options_init(opts, version);
+}
+#endif

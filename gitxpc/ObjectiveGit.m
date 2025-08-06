@@ -10,5 +10,5 @@
 
 __attribute__((constructor))
 static void GTSetupThreads(void) {
-	git_threads_init();
+	git_libgit2_init();
 }

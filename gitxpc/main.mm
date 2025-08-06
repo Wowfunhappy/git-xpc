@@ -116,7 +116,7 @@ static void getDiffOfFile(xpc_connection_t conn, xpc_object_t msg, xpc_object_t 
     options.context_lines = 3;
     options.flags = GIT_DIFF_IGNORE_WHITESPACE;
 
-    git_diff_blobs(oldBlob, NULL, newBlob.git_blob, NULL, &options, NULL, NULL, onGTDiffLine, (__bridge void*)modifications);
+    git_diff_blobs(oldBlob, NULL, newBlob.git_blob, NULL, &options, NULL, NULL, NULL, onGTDiffLine, (__bridge void*)modifications);
 
     xpc_dictionary_set_value(msg, "diff", modifications);
     xpc_connection_send_message(conn, msg);
@@ -182,7 +182,7 @@ static void get_diff(xpc_connection_t conn, xpc_object_t msg, xpc_object_t event
             SEND_AND_RETURN;
         }
 
-        const git_oid* blobSha = &entry->oid;
+        const git_oid* blobSha = &entry->id;
         if (blobSha != NULL && git_blob_lookup(&blob, repo, blobSha) != GIT_OK)
             blob = NULL;
     } else {
@@ -232,7 +232,7 @@ static void get_diff(xpc_connection_t conn, xpc_object_t msg, xpc_object_t event
 
     options.context_lines = 0;
     if (git_diff_blob_to_buffer(blob, NULL, data, data_len, NULL,
-                                &options, NULL, DiffHunkCallback, NULL,
+                                &options, NULL, NULL, DiffHunkCallback, NULL,
                                 &ranges) == GIT_OK) {
 
 //        Local<Object> v8Ranges = Array::New(ranges.size());

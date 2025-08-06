@@ -7,15 +7,17 @@
 #ifndef INCLUDE_attr_file_h__
 #define INCLUDE_attr_file_h__
 
+#include "common.h"
+
 #include "git2/oid.h"
 #include "git2/attr.h"
 #include "vector.h"
 #include "pool.h"
 #include "buffer.h"
-#include "fileops.h"
+#include "futils.h"
 
 #define GIT_ATTR_FILE			".gitattributes"
-#define GIT_ATTR_FILE_INREPO	"info/attributes"
+#define GIT_ATTR_FILE_INREPO	"attributes"
 #define GIT_ATTR_FILE_SYSTEM	"gitattributes"
 #define GIT_ATTR_FILE_XDG		"attributes"
 
@@ -32,8 +34,35 @@
 #define GIT_ATTR_FNMATCH_ALLOWMACRO (1U << 10)
 
 #define GIT_ATTR_FNMATCH__INCOMING \
-	(GIT_ATTR_FNMATCH_ALLOWSPACE | \
-	 GIT_ATTR_FNMATCH_ALLOWNEG | GIT_ATTR_FNMATCH_ALLOWMACRO)
+	(GIT_ATTR_FNMATCH_ALLOWSPACE | GIT_ATTR_FNMATCH_ALLOWNEG | GIT_ATTR_FNMATCH_ALLOWMACRO)
+
+typedef enum {
+	GIT_ATTR_FILE_SOURCE_MEMORY = 0,
+	GIT_ATTR_FILE_SOURCE_FILE   = 1,
+	GIT_ATTR_FILE_SOURCE_INDEX  = 2,
+	GIT_ATTR_FILE_SOURCE_HEAD   = 3,
+	GIT_ATTR_FILE_SOURCE_COMMIT = 4,
+
+	GIT_ATTR_FILE_NUM_SOURCES   = 5
+} git_attr_file_source_t;
+
+typedef struct {
+	/* The source location for the attribute file. */
+	git_attr_file_source_t type;
+
+	/*
+	 * The filename of the attribute file to read (relative to the
+	 * given base path).
+	 */
+	const char *base;
+	const char *filename;
+
+	/*
+	 * The commit ID when the given source type is a commit (or NULL
+	 * for the repository's HEAD commit.)
+	 */
+	git_oid *commit_id;
+} git_attr_file_source;
 
 extern const char *git_attr__true;
 extern const char *git_attr__false;
@@ -42,6 +71,8 @@ extern const char *git_attr__unset;
 typedef struct {
 	char *pattern;
 	size_t length;
+	char *containing_dir;
+	size_t containing_dir_length;
 	unsigned int flags;
 } git_attr_fnmatch;
 
@@ -63,16 +94,28 @@ typedef struct {
 	const char *value;
 } git_attr_assignment;
 
+typedef struct git_attr_file_entry git_attr_file_entry;
+
 typedef struct {
-	char *key;				/* cache "source#path" this was loaded from */
-	git_vector rules;		/* vector of <rule*> or <fnmatch*> */
-	git_pool *pool;
-	bool pool_is_allocated;
+	git_refcount rc;
+	git_mutex lock;
+	git_attr_file_entry *entry;
+	git_attr_file_source source;
+	git_vector rules;			/* vector of <rule*> or <fnmatch*> */
+	git_pool pool;
+	unsigned int nonexistent:1;
+	int session_key;
 	union {
 		git_oid oid;
 		git_futils_filestamp stamp;
 	} cache_data;
 } git_attr_file;
+
+struct git_attr_file_entry {
+	git_attr_file *file[GIT_ATTR_FILE_NUM_SOURCES];
+	const char *path; /* points into fullpath */
+	char fullpath[GIT_FLEX_ARRAY];
+};
 
 typedef struct {
 	git_buf  full;
@@ -81,31 +124,71 @@ typedef struct {
 	int      is_dir;
 } git_attr_path;
 
-typedef enum {
-	GIT_ATTR_FILE_FROM_FILE = 0,
-	GIT_ATTR_FILE_FROM_INDEX = 1
-} git_attr_file_source;
+/* A git_attr_session can provide an "instance" of reading, to prevent cache
+ * invalidation during a single operation instance (like checkout).
+ */
+
+typedef struct {
+	int key;
+	unsigned int init_setup:1,
+		init_sysdir:1;
+	git_buf sysdir;
+	git_buf tmp;
+} git_attr_session;
+
+extern int git_attr_session__init(git_attr_session *attr_session, git_repository *repo);
+extern void git_attr_session__free(git_attr_session *session);
+
+extern int git_attr_get_many_with_session(
+	const char **values_out,
+	git_repository *repo,
+	git_attr_session *attr_session,
+	git_attr_options *opts,
+	const char *path,
+	size_t num_attr,
+	const char **names);
+
+typedef int (*git_attr_file_parser)(
+	git_repository *repo,
+	git_attr_file *file,
+	const char *data,
+	bool allow_macros);
 
 /*
  * git_attr_file API
  */
 
-extern int git_attr_file__new(
-	git_attr_file **attrs_ptr, git_attr_file_source src, const char *path, git_pool *pool);
+int git_attr_file__new(
+	git_attr_file **out,
+	git_attr_file_entry *entry,
+	git_attr_file_source *source);
 
-extern int git_attr_file__new_and_load(
-	git_attr_file **attrs_ptr, const char *path);
+void git_attr_file__free(git_attr_file *file);
 
-extern void git_attr_file__free(git_attr_file *file);
+int git_attr_file__load(
+	git_attr_file **out,
+	git_repository *repo,
+	git_attr_session *attr_session,
+	git_attr_file_entry *ce,
+	git_attr_file_source *source,
+	git_attr_file_parser parser,
+	bool allow_macros);
 
-extern void git_attr_file__clear_rules(git_attr_file *file);
+int git_attr_file__load_standalone(
+	git_attr_file **out, const char *path);
 
-extern int git_attr_file__parse_buffer(
-	git_repository *repo, void *parsedata, const char *buf, git_attr_file *file);
+int git_attr_file__out_of_date(
+	git_repository *repo, git_attr_session *session, git_attr_file *file, git_attr_file_source *source);
 
-extern int git_attr_file__lookup_one(
+int git_attr_file__parse_buffer(
+	git_repository *repo, git_attr_file *attrs, const char *data, bool allow_macros);
+
+int git_attr_file__clear_rules(
+	git_attr_file *file, bool need_lock);
+
+int git_attr_file__lookup_one(
 	git_attr_file *file,
-	const git_attr_path *path,
+	git_attr_path *path,
 	const char *attr,
 	const char **value);
 
@@ -114,7 +197,7 @@ extern int git_attr_file__lookup_one(
 	git_vector_rforeach(&(file)->rules, (iter), (rule)) \
 		if (git_attr_rule__match((rule), (path)))
 
-extern uint32_t git_attr_file__name_hash(const char *name);
+uint32_t git_attr_file__name_hash(const char *name);
 
 
 /*
@@ -129,20 +212,24 @@ extern int git_attr_fnmatch__parse(
 
 extern bool git_attr_fnmatch__match(
 	git_attr_fnmatch *rule,
-	const git_attr_path *path);
+	git_attr_path *path);
 
 extern void git_attr_rule__free(git_attr_rule *rule);
 
 extern bool git_attr_rule__match(
 	git_attr_rule *rule,
-	const git_attr_path *path);
+	git_attr_path *path);
 
 extern git_attr_assignment *git_attr_rule__lookup_assignment(
 	git_attr_rule *rule, const char *name);
 
-extern int git_attr_path__init(
-	git_attr_path *info, const char *path, const char *base);
+typedef enum { GIT_DIR_FLAG_TRUE = 1, GIT_DIR_FLAG_FALSE = 0, GIT_DIR_FLAG_UNKNOWN = -1 } git_dir_flag;
 
+extern int git_attr_path__init(
+	git_attr_path *out,
+	const char *path,
+	const char *base,
+	git_dir_flag is_dir);
 extern void git_attr_path__free(git_attr_path *info);
 
 extern int git_attr_assignment__parse(

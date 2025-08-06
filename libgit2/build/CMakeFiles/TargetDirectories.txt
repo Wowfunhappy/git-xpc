@@ -1,7 +1,28 @@
-/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/git2.dir
-/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/edit_cache.dir
-/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/rebuild_cache.dir
-/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/list_install_components.dir
-/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/install.dir
-/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/install/local.dir
-/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/install/strip.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/edit_cache.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/rebuild_cache.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/list_install_components.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/install.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/install/local.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/install/strip.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/src/CMakeFiles/git2internal.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/src/CMakeFiles/git2.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/src/CMakeFiles/edit_cache.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/src/CMakeFiles/rebuild_cache.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/src/CMakeFiles/list_install_components.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/src/CMakeFiles/install.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/src/CMakeFiles/install/local.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/src/CMakeFiles/install/strip.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/deps/http-parser/CMakeFiles/http-parser.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/deps/http-parser/CMakeFiles/edit_cache.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/deps/http-parser/CMakeFiles/rebuild_cache.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/deps/http-parser/CMakeFiles/list_install_components.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/deps/http-parser/CMakeFiles/install.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/deps/http-parser/CMakeFiles/install/local.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/deps/http-parser/CMakeFiles/install/strip.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/deps/ntlmclient/CMakeFiles/ntlmclient.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/deps/ntlmclient/CMakeFiles/edit_cache.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/deps/ntlmclient/CMakeFiles/rebuild_cache.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/deps/ntlmclient/CMakeFiles/list_install_components.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/deps/ntlmclient/CMakeFiles/install.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/deps/ntlmclient/CMakeFiles/install/local.dir
+/Users/jonathan/Desktop/git-xpc/libgit2/build/deps/ntlmclient/CMakeFiles/install/strip.dir

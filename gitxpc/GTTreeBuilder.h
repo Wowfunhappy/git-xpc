@@ -32,7 +32,7 @@
 
 // The mode of an index or tree entry.
 typedef enum {
-	GTFileModeNew = GIT_FILEMODE_NEW,
+	GTFileModeNew = GIT_FILEMODE_UNREADABLE, // GIT_FILEMODE_NEW doesn't exist in libgit2 1.3.2
 	GTFileModeTree = GIT_FILEMODE_TREE,
 	GTFileModeBlob = GIT_FILEMODE_BLOB,
 	GTFileModeBlobExecutable = GIT_FILEMODE_BLOB_EXECUTABLE,

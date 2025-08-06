@@ -82,13 +82,8 @@
 #pragma mark Update the remote
 
 - (BOOL)saveRemote:(NSError **)error {
-	int gitError = git_remote_save(self.git_remote);
-	if (gitError != GIT_OK) {
-		if (error != NULL) {
-			*error = [NSError git_errorFor:gitError description:@"Failed to save remote configuration."];
-		}
-		return NO;
-	}
+	// In libgit2 1.3.2, git_remote_save() has been removed
+	// Configuration changes are saved automatically
 	return YES;
 }
 
@@ -97,7 +92,10 @@
 
 	if ([self.URLString isEqualToString:URLString]) return YES;
 
-	int gitError = git_remote_set_url(self.git_remote, URLString.UTF8String);
+	// In libgit2 1.3.2, git_remote_set_url requires repository and remote name
+	git_repository *repo = git_remote_owner(self.git_remote);
+	const char *remoteName = git_remote_name(self.git_remote);
+	int gitError = git_remote_set_url(repo, remoteName, URLString.UTF8String);
 	if (gitError != GIT_OK) {
 		if (error != NULL) {
 			*error = [NSError git_errorFor:gitError description:@"Failed to update remote URL string."];
@@ -112,7 +110,10 @@
 
 	if ([self.fetchRefspecs containsObject:fetchRefspec]) return YES;
 
-	int gitError = git_remote_add_fetch(self.git_remote, fetchRefspec.UTF8String);
+	// In libgit2 1.3.2, git_remote_add_fetch requires repository and remote name
+	git_repository *repo = git_remote_owner(self.git_remote);
+	const char *remoteName = git_remote_name(self.git_remote);
+	int gitError = git_remote_add_fetch(repo, remoteName, fetchRefspec.UTF8String);
 	if (gitError != GIT_OK) {
 		if (error != NULL) {
 			*error = [NSError git_errorFor:gitError description:@"Failed to add fetch refspec."];

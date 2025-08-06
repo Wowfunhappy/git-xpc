@@ -14,6 +14,9 @@
 #include "hash.h"
 #include "oidmap.h"
 #include "netops.h"
+#include "zstream.h"
+#include "pool.h"
+#include "indexer.h"
 
 #include "git2/oid.h"
 #include "git2/pack.h"
@@ -26,8 +29,8 @@
 
 typedef struct git_pobject {
 	git_oid id;
-	git_otype type;
-	git_off_t offset;
+	git_object_t type;
+	off64_t offset;
 
 	size_t size;
 
@@ -40,8 +43,8 @@ typedef struct git_pobject {
 					    * me */
 
 	void *delta_data;
-	unsigned long delta_size;
-	unsigned long z_delta_size;
+	size_t delta_size;
+	size_t z_delta_size;
 
 	int written:1,
 	    recursing:1,
@@ -54,15 +57,21 @@ struct git_packbuilder {
 	git_odb *odb; /* associated object database */
 
 	git_hash_ctx ctx;
+	git_zstream zstream;
 
 	uint32_t nr_objects,
-		 nr_alloc,
-		 nr_written,
-		 nr_remaining;
+		nr_deltified,
+		nr_written,
+		nr_remaining;
+
+	size_t nr_alloc;
 
 	git_pobject *object_list;
 
 	git_oidmap *object_ix;
+
+	git_oidmap *walk_objects;
+	git_pool object_pool;
 
 	git_oid pack_oid; /* hash of written pack */
 
@@ -72,13 +81,13 @@ struct git_packbuilder {
 	git_cond progress_cond;
 
 	/* configs */
-	uint64_t delta_cache_size;
-	uint64_t max_delta_cache_size;
-	uint64_t cache_max_small_delta_size;
-	uint64_t big_file_threshold;
-	uint64_t window_memory_limit;
+	size_t delta_cache_size;
+	size_t max_delta_cache_size;
+	size_t cache_max_small_delta_size;
+	size_t big_file_threshold;
+	size_t window_memory_limit;
 
-	int nr_threads; /* nr of threads to use */
+	unsigned int nr_threads; /* nr of threads to use */
 
 	git_packbuilder_progress progress_cb;
 	void *progress_cb_payload;
@@ -89,4 +98,4 @@ struct git_packbuilder {
 
 int git_packbuilder_write_buf(git_buf *buf, git_packbuilder *pb);
 
-#endif /* INCLUDE_pack_objects_h__ */
+#endif

@@ -24,7 +24,9 @@
 }
 
 - (void)setIgnoreRule:(GTSubmoduleIgnoreRule)ignoreRule {
-	git_submodule_set_ignore(self.git_submodule, (git_submodule_ignore_t)ignoreRule);
+	// In libgit2 1.3.2, git_submodule_set_ignore requires repository
+	git_repository *repo = git_submodule_owner(self.git_submodule);
+	git_submodule_set_ignore(repo, git_submodule_name(self.git_submodule), (git_submodule_ignore_t)ignoreRule);
 }
 
 - (GTOID *)indexOID {
@@ -95,7 +97,9 @@
 
 - (GTSubmoduleStatus)status:(NSError **)error {
 	unsigned status;
-	int gitError = git_submodule_status(&status, self.git_submodule);
+	// In libgit2 1.3.2, git_submodule_status requires repository and name
+	git_repository *repo = git_submodule_owner(self.git_submodule);
+	int gitError = git_submodule_status(&status, repo, git_submodule_name(self.git_submodule), GIT_SUBMODULE_IGNORE_UNSPECIFIED);
 	if (gitError != GIT_OK) {
 		if (error != NULL) *error = [NSError git_errorFor:gitError description:@"Failed to get submodule %@ status.", self.name];
 		return GTSubmoduleStatusUnknown;
@@ -107,7 +111,7 @@
 #pragma mark Manipulation
 
 - (BOOL)reload:(NSError **)error {
-	int gitError = git_submodule_reload(self.git_submodule);
+	int gitError = git_submodule_reload(self.git_submodule, 0);
 	if (gitError != GIT_OK) {
 		if (error != NULL) *error = [NSError git_errorFor:gitError description:@"Failed to reload submodule %@.", self.name];
 		return NO;

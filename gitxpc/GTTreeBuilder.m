@@ -63,7 +63,9 @@
 	self = [super init];
 	if (self == nil) return nil;
 
-	int status = git_treebuilder_create(&_git_treebuilder, treeOrNil.git_tree);
+	// In libgit2 1.3.2, git_treebuilder_create was renamed to git_treebuilder_new and needs repository
+	git_repository *repo = treeOrNil ? git_tree_owner(treeOrNil.git_tree) : NULL;
+	int status = git_treebuilder_new(&_git_treebuilder, repo, treeOrNil.git_tree);
 	if (status != GIT_OK) {
 		if (error != NULL) *error = [NSError git_errorFor:status description:@"Failed to create tree builder with tree %@.", treeOrNil.SHA];
 		return nil;
@@ -175,7 +177,7 @@ static int filter_callback(const git_tree_entry *entry, void *payload) {
 	if (!success) return nil;
 
 	git_oid treeOid;
-	int status = git_treebuilder_write(&treeOid, repository.git_repository, self.git_treebuilder);
+	int status = git_treebuilder_write(&treeOid, self.git_treebuilder);
 	if (status != GIT_OK) {
 		if (error != NULL) *error = [NSError git_errorFor:status description:@"Failed to write tree in repository."];
 		return nil;

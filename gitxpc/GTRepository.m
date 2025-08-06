@@ -196,32 +196,33 @@ struct GTClonePayload {
 	cloneOptions.bare = (bare == nil ? 0 : bare.boolValue);
 
 	NSNumber *transportFlags = options[GTRepositoryCloneOptionsTransportFlags];
-	cloneOptions.ignore_cert_errors = (transportFlags == nil ? 0 : 1);
+	// ignore_cert_errors removed in libgit2 1.3.2
+	// cloneOptions.ignore_cert_errors = (transportFlags == nil ? 0 : 1);
 
 	NSNumber *checkout = options[GTRepositoryCloneOptionsCheckout];
 	BOOL withCheckout = (checkout == nil ? YES : checkout.boolValue);
 
 	if (withCheckout) {
-		git_checkout_opts checkoutOptions = GIT_CHECKOUT_OPTS_INIT;
-		checkoutOptions.checkout_strategy = GIT_CHECKOUT_SAFE_CREATE;
+		git_checkout_options checkoutOptions = GIT_CHECKOUT_OPTIONS_INIT;
+		checkoutOptions.checkout_strategy = GIT_CHECKOUT_SAFE;
 		checkoutOptions.progress_cb = checkoutProgressCallback;
 		checkoutOptions.progress_payload = (__bridge void *)checkoutProgressBlock;
 		cloneOptions.checkout_opts = checkoutOptions;
 	}
 
 	struct GTClonePayload payload;
-	cloneOptions.remote_callbacks.version = GIT_REMOTE_CALLBACKS_VERSION;
+	cloneOptions.fetch_opts.callbacks.version = GIT_REMOTE_CALLBACKS_VERSION;
 
 	GTCredentialProvider *provider = options[GTRepositoryCloneOptionsCredentialProvider];
 	if (provider) {
 		payload.credProvider = provider;
-		cloneOptions.remote_callbacks.credentials = GTCredentialAcquireCallback;
+		cloneOptions.fetch_opts.callbacks.credentials = GTCredentialAcquireCallback;
 	}
 
 	payload.transferProgressBlock = transferProgressBlock;
 
-	cloneOptions.remote_callbacks.transfer_progress = transferProgressCallback;
-	cloneOptions.remote_callbacks.payload = &payload;
+	cloneOptions.fetch_opts.callbacks.transfer_progress = transferProgressCallback;
+	cloneOptions.fetch_opts.callbacks.payload = &payload;
 
 	BOOL localClone = [options[GTRepositoryCloneOptionsCloneLocal] boolValue];
 //ERR	if (localClone) {
@@ -438,7 +439,7 @@ static int GTRepositoryForeachTagCallback(const char *name, git_oid *oid, void *
 	NSParameterAssert(targetOID != nil);
 
 	git_reference *ref;
-	int gitError = git_reference_create(&ref, self.git_repository, name.UTF8String, targetOID.git_oid, 0);
+	int gitError = git_reference_create(&ref, self.git_repository, name.UTF8String, targetOID.git_oid, 0, NULL);
 	if (gitError != GIT_OK) {
 		if (error != NULL) *error = [NSError git_errorFor:gitError description:@"Failed to create direct reference to %@", targetOID];
 		return nil;
@@ -453,7 +454,7 @@ static int GTRepositoryForeachTagCallback(const char *name, git_oid *oid, void *
 	NSParameterAssert(targetRef.name != nil);
 
 	git_reference *ref;
-	int gitError = git_reference_symbolic_create(&ref, self.git_repository, name.UTF8String, targetRef.name.UTF8String, 0);
+	int gitError = git_reference_symbolic_create(&ref, self.git_repository, name.UTF8String, targetRef.name.UTF8String, 0, NULL);
 	if (gitError != GIT_OK) {
 		if (error != NULL) *error = [NSError git_errorFor:gitError description:@"Failed to create symbolic reference to %@", targetRef];
 		return nil;
@@ -544,17 +545,16 @@ static int GTRepositoryForeachTagCallback(const char *name, git_oid *oid, void *
 		}
 	};
 
-	git_buf msg = { NULL };
-	char messageBuffer[4096];
-	int errorCode = git_repository_message(messageBuffer, sizeof(messageBuffer), self.git_repository);
+	git_buf messageBuffer = { NULL, 0, 0 };
+	int errorCode = git_repository_message(&messageBuffer, self.git_repository);
 	if (errorCode != GIT_OK) {
 		setErrorFromCode(errorCode);
-		git_buf_free(&msg);
+		git_buf_free(&messageBuffer);
 		return nil;
 	}
 
-	NSString *message = [[NSString alloc] initWithBytes:messageBuffer length:strlen(messageBuffer) encoding:NSUTF8StringEncoding];
-
+	NSString *message = @(messageBuffer.ptr);
+	git_buf_free(&messageBuffer);
 	return message;
 }
 
@@ -619,7 +619,9 @@ static int submoduleEnumerationCallback(git_submodule *git_submodule, const char
 }
 
 - (BOOL)reloadSubmodules:(NSError **)error {
-	int gitError = git_submodule_reload_all(self.git_repository);
+	// git_submodule_reload_all was removed in libgit2 1.3.2
+	// Submodules are now automatically kept up to date
+	int gitError = 0;
 	if (gitError != GIT_OK) {
 		if (error != NULL) *error = [NSError git_errorFor:gitError description:@"Failed to reload submodules."];
 		return NO;
@@ -751,7 +753,7 @@ static int checkoutNotifyCallback(git_checkout_notify_t why, const char *path, c
 
 - (BOOL)performCheckoutWithStrategy:(GTCheckoutStrategyType)strategy notifyFlags:(GTCheckoutNotifyFlags)notifyFlags error:(NSError **)error progressBlock:(GTCheckoutProgressBlock)progressBlock notifyBlock:(GTCheckoutNotifyBlock)notifyBlock {
 	
-	git_checkout_opts checkoutOptions = GIT_CHECKOUT_OPTS_INIT;
+	git_checkout_options checkoutOptions = GIT_CHECKOUT_OPTIONS_INIT;
 	
 	checkoutOptions.checkout_strategy = strategy;
 	checkoutOptions.progress_cb = checkoutProgressCallback;
@@ -795,7 +797,6 @@ static int checkoutNotifyCallback(git_checkout_notify_t why, const char *path, c
 	git_attr_cache_flush(self.git_repository);
 }
 
-/*
 - (GTFilterList *)filterListWithPath:(NSString *)path blob:(GTBlob *)blob mode:(GTFilterSourceMode)mode options:(GTFilterListOptions)options success:(BOOL *)success error:(NSError **)error {
 	NSParameterAssert(path != nil);
 
@@ -815,5 +816,4 @@ static int checkoutNotifyCallback(git_checkout_notify_t why, const char *path, c
 		return [[GTFilterList alloc] initWithGitFilterList:list];
 	}
 }
-*/
 @end

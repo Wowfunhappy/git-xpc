@@ -4,8 +4,10 @@
  * This file is part of libgit2, distributed under the GNU GPL v2 with
  * a Linking Exception. For full terms see the included COPYING file.
  */
-#ifndef INCLUDE_compat_h__
-#define INCLUDE_compat_h__
+#ifndef INCLUDE_cc_compat_h__
+#define INCLUDE_cc_compat_h__
+
+#include <stdarg.h>
 
 /*
  * See if our compiler is known to support flexible array members.
@@ -27,21 +29,50 @@
 #	endif
 #endif
 
-#ifdef __GNUC__
-#	define GIT_TYPEOF(x) (__typeof__(x))
+#if defined(__GNUC__)
+#	define GIT_ALIGN(x,size) x __attribute__ ((aligned(size)))
+#elif defined(_MSC_VER)
+#	define GIT_ALIGN(x,size) __declspec(align(size)) x
 #else
-#	define GIT_TYPEOF(x)
+#	define GIT_ALIGN(x,size) x
 #endif
 
-#define GIT_UNUSED(x) ((void)(x))
+#if defined(__GNUC__)
+# define GIT_UNUSED(x)                                                         \
+	do {                                                                   \
+		__typeof__(x) _unused __attribute__((unused));                 \
+		_unused = (x);                                                 \
+	} while (0)
+#else
+# define GIT_UNUSED(x) ((void)(x))
+#endif
 
-/* Define the printf format specifer to use for size_t output */
+/* Define the printf format specifier to use for size_t output */
 #if defined(_MSC_VER) || defined(__MINGW32__)
-#	define PRIuZ "Iu"
-#	define PRIxZ "Ix"
+
+/* Visual Studio 2012 and prior lack PRId64 entirely */
+#	ifndef PRId64
+#		define PRId64 "I64d"
+#	endif
+
+/* The first block is needed to avoid warnings on MingW amd64 */
+#	if (SIZE_MAX == ULLONG_MAX)
+#		define PRIuZ "I64u"
+#		define PRIxZ "I64x"
+#		define PRIXZ "I64X"
+#		define PRIdZ "I64d"
+#	else
+#		define PRIuZ "Iu"
+#		define PRIxZ "Ix"
+#		define PRIXZ "IX"
+#		define PRIdZ "Id"
+#	endif
+
 #else
 #	define PRIuZ "zu"
 #	define PRIxZ "zx"
+#	define PRIXZ "zX"
+#	define PRIdZ "zd"
 #endif
 
 /* Micosoft Visual C/C++ */
@@ -72,4 +103,4 @@
 #	endif
 #endif
 
-#endif /* INCLUDE_compat_h__ */
+#endif

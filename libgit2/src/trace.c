@@ -5,10 +5,10 @@
  * a Linking Exception. For full terms see the included COPYING file.
  */
 
-#include "buffer.h"
-#include "common.h"
-#include "global.h"
 #include "trace.h"
+
+#include "buffer.h"
+#include "runtime.h"
 #include "git2/trace.h"
 
 #ifdef GIT_TRACE
@@ -17,10 +17,10 @@ struct git_trace_data git_trace__data = {0};
 
 #endif
 
-int git_trace_set(git_trace_level_t level, git_trace_callback callback)
+int git_trace_set(git_trace_level_t level, git_trace_cb callback)
 {
 #ifdef GIT_TRACE
-	assert(level == 0 || callback != NULL);
+	GIT_ASSERT_ARG(level == 0 || callback != NULL);
 
 	git_trace__data.level = level;
 	git_trace__data.callback = callback;
@@ -31,8 +31,8 @@ int git_trace_set(git_trace_level_t level, git_trace_callback callback)
 	GIT_UNUSED(level);
 	GIT_UNUSED(callback);
 
-	giterr_set(GITERR_INVALID,
-		"This version of libgit2 was not built with tracing.");
+	git_error_set(GIT_ERROR_INVALID,
+		"this version of libgit2 was not built with tracing.");
 	return -1;
 #endif
 }

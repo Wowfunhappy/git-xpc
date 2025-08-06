@@ -7,6 +7,8 @@
 #ifndef INCLUDE_revwalk_h__
 #define INCLUDE_revwalk_h__
 
+#include "common.h"
+
 #include "git2/revwalk.h"
 #include "oidmap.h"
 #include "commit_list.h"
@@ -14,7 +16,7 @@
 #include "pool.h"
 #include "vector.h"
 
-GIT__USE_OIDMAP;
+#include "oidmap.h"
 
 struct git_revwalk {
 	git_repository *repo;
@@ -32,14 +34,40 @@ struct git_revwalk {
 	int (*enqueue)(git_revwalk *, git_commit_list_node *);
 
 	unsigned walking:1,
-		first_parent: 1;
+		first_parent: 1,
+		did_hide: 1,
+		did_push: 1,
+		limited: 1;
 	unsigned int sorting;
 
-	/* merge base calculation */
-	git_commit_list_node *one;
-	git_vector twos;
+	/* the pushes and hides */
+	git_commit_list *user_input;
+
+	/* hide callback */
+	git_revwalk_hide_cb hide_cb;
+	void *hide_cb_payload;
 };
 
 git_commit_list_node *git_revwalk__commit_lookup(git_revwalk *walk, const git_oid *oid);
+
+typedef struct {
+	int uninteresting;
+	int from_glob;
+	int insert_by_date;
+} git_revwalk__push_options;
+
+#define GIT_REVWALK__PUSH_OPTIONS_INIT { 0 }
+
+int git_revwalk__push_commit(git_revwalk *walk,
+	const git_oid *oid,
+	const git_revwalk__push_options *opts);
+
+int git_revwalk__push_ref(git_revwalk *walk,
+	const char *refname,
+	const git_revwalk__push_options *opts);
+
+int git_revwalk__push_glob(git_revwalk *walk,
+	const char *glob,
+	const git_revwalk__push_options *given_opts);
 
 #endif

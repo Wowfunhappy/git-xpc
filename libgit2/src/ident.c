@@ -5,10 +5,11 @@
  * a Linking Exception. For full terms see the included COPYING file.
  */
 
+#include "common.h"
+
 #include "git2/sys/filter.h"
 #include "filter.h"
 #include "buffer.h"
-#include "buf_text.h"
 
 static int ident_find_id(
 	const char **id_start, const char **id_end, const char *start, size_t len)
@@ -56,7 +57,7 @@ static int ident_insert_id(
 		return GIT_PASSTHROUGH;
 
 	need_size = (size_t)(id_start - from->ptr) +
-		5 /* "$Id: " */ + GIT_OID_HEXSZ + 1 /* "$" */ +
+		5 /* "$Id: " */ + GIT_OID_HEXSZ + 2 /* " $" */ +
 		(size_t)(from_end - id_end);
 
 	if (git_buf_grow(to, need_size) < 0)
@@ -65,7 +66,7 @@ static int ident_insert_id(
 	git_buf_set(to, from->ptr, (size_t)(id_start - from->ptr));
 	git_buf_put(to, "$Id: ", 5);
 	git_buf_put(to, oid, GIT_OID_HEXSZ);
-	git_buf_putc(to, '$');
+	git_buf_put(to, " $", 2);
 	git_buf_put(to, id_end, (size_t)(from_end - id_end));
 
 	return git_buf_oom(to) ? -1 : 0;
@@ -103,7 +104,7 @@ static int ident_apply(
 	GIT_UNUSED(self); GIT_UNUSED(payload);
 
 	/* Don't filter binary files */
-	if (git_buf_text_is_binary(from))
+	if (git_buf_is_binary(from))
 		return GIT_PASSTHROUGH;
 
 	if (git_filter_source_mode(src) == GIT_FILTER_SMUDGE)
@@ -112,14 +113,27 @@ static int ident_apply(
 		return ident_remove_id(to, from);
 }
 
+static int ident_stream(
+	git_writestream **out,
+	git_filter *self,
+	void **payload,
+	const git_filter_source *src,
+	git_writestream *next)
+{
+	return git_filter_buffered_stream_new(out,
+		self, ident_apply, NULL, payload, src, next);
+}
+
 git_filter *git_ident_filter_new(void)
 {
 	git_filter *f = git__calloc(1, sizeof(git_filter));
+	if (f == NULL)
+		return NULL;
 
 	f->version = GIT_FILTER_VERSION;
 	f->attributes = "+ident"; /* apply to files with ident attribute set */
 	f->shutdown = git_filter_free;
-	f->apply    = ident_apply;
+	f->stream   = ident_stream;
 
 	return f;
 }

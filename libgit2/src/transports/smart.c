@@ -4,9 +4,13 @@
  * This file is part of libgit2, distributed under the GNU GPL v2 with
  * a Linking Exception. For full terms see the included COPYING file.
  */
-#include "git2.h"
+
 #include "smart.h"
+
+#include "git2.h"
 #include "refs.h"
+#include "refspec.h"
+#include "proxy.h"
 
 static int git_smart__recv_cb(gitno_buffer *buf)
 {
@@ -14,7 +18,7 @@ static int git_smart__recv_cb(gitno_buffer *buf)
 	size_t old_len, bytes_read;
 	int error;
 
-	assert(t->current_stream);
+	GIT_ASSERT(t->current_stream);
 
 	old_len = buf->offset;
 
@@ -23,13 +27,13 @@ static int git_smart__recv_cb(gitno_buffer *buf)
 
 	buf->offset += bytes_read;
 
-	if (t->packetsize_cb && !t->cancelled.val)
-		if (t->packetsize_cb(bytes_read, t->packetsize_payload)) {
-			git_atomic_set(&t->cancelled, 1);
-
-			giterr_clear();
+	if (t->packetsize_cb && !t->cancelled.val) {
+		error = t->packetsize_cb(bytes_read, t->packetsize_payload);
+		if (error) {
+			git_atomic32_set(&t->cancelled, 1);
 			return GIT_EUSER;
 		}
+	}
 
 	return (int)(buf->offset - old_len);
 }
@@ -41,9 +45,13 @@ GIT_INLINE(int) git_smart__reset_stream(transport_smart *t, bool close_subtransp
 		t->current_stream = NULL;
 	}
 
-	if (close_subtransport &&
-		t->wrapped->close(t->wrapped) < 0)
-		return -1;
+	if (close_subtransport) {
+		git__free(t->url);
+		t->url = NULL;
+
+		if (t->wrapped->close(t->wrapped) < 0)
+			return -1;
+	}
 
 	return 0;
 }
@@ -52,18 +60,98 @@ static int git_smart__set_callbacks(
 	git_transport *transport,
 	git_transport_message_cb progress_cb,
 	git_transport_message_cb error_cb,
+	git_transport_certificate_check_cb certificate_check_cb,
 	void *message_cb_payload)
 {
-	transport_smart *t = (transport_smart *)transport;
+	transport_smart *t = GIT_CONTAINER_OF(transport, transport_smart, parent);
 
 	t->progress_cb = progress_cb;
 	t->error_cb = error_cb;
+	t->certificate_check_cb = certificate_check_cb;
 	t->message_cb_payload = message_cb_payload;
 
 	return 0;
 }
 
-int git_smart__update_heads(transport_smart *t)
+static size_t http_header_name_length(const char *http_header)
+{
+	const char *colon = strchr(http_header, ':');
+	if (!colon)
+		return 0;
+	return colon - http_header;
+}
+
+static bool is_malformed_http_header(const char *http_header)
+{
+	const char *c;
+	size_t name_len;
+
+	/* Disallow \r and \n */
+	c = strchr(http_header, '\r');
+	if (c)
+		return true;
+	c = strchr(http_header, '\n');
+	if (c)
+		return true;
+
+	/* Require a header name followed by : */
+	name_len = http_header_name_length(http_header);
+	if (name_len < 1)
+		return true;
+
+	return false;
+}
+
+static char *forbidden_custom_headers[] = {
+	"User-Agent",
+	"Host",
+	"Accept",
+	"Content-Type",
+	"Transfer-Encoding",
+	"Content-Length",
+};
+
+static bool is_forbidden_custom_header(const char *custom_header)
+{
+	unsigned long i;
+	size_t name_len = http_header_name_length(custom_header);
+
+	/* Disallow headers that we set */
+	for (i = 0; i < ARRAY_SIZE(forbidden_custom_headers); i++)
+		if (strncmp(forbidden_custom_headers[i], custom_header, name_len) == 0)
+			return true;
+
+	return false;
+}
+
+static int git_smart__set_custom_headers(
+	git_transport *transport,
+	const git_strarray *custom_headers)
+{
+	transport_smart *t = GIT_CONTAINER_OF(transport, transport_smart, parent);
+	size_t i;
+
+	if (t->custom_headers.count)
+		git_strarray_dispose(&t->custom_headers);
+
+	if (!custom_headers)
+		return 0;
+
+	for (i = 0; i < custom_headers->count; i++) {
+		if (is_malformed_http_header(custom_headers->strings[i])) {
+			git_error_set(GIT_ERROR_INVALID, "custom HTTP header '%s' is malformed", custom_headers->strings[i]);
+			return -1;
+		}
+		if (is_forbidden_custom_header(custom_headers->strings[i])) {
+			git_error_set(GIT_ERROR_INVALID, "custom HTTP header '%s' is already set by libgit2", custom_headers->strings[i]);
+			return -1;
+		}
+	}
+
+	return git_strarray_copy(&t->custom_headers, custom_headers);
+}
+
+int git_smart__update_heads(transport_smart *t, git_vector *symrefs)
 {
 	size_t i;
 	git_pkt *pkt;
@@ -74,6 +162,27 @@ int git_smart__update_heads(transport_smart *t)
 		if (pkt->type != GIT_PKT_REF)
 			continue;
 
+		if (symrefs) {
+			git_refspec *spec;
+			git_buf buf = GIT_BUF_INIT;
+			size_t j;
+			int error = 0;
+
+			git_vector_foreach(symrefs, j, spec) {
+				git_buf_clear(&buf);
+				if (git_refspec_src_matches(spec, ref->head.name) &&
+				    !(error = git_refspec_transform(&buf, spec, ref->head.name))) {
+					git__free(ref->head.symref_target);
+					ref->head.symref_target = git_buf_detach(&buf);
+				}
+			}
+
+			git_buf_dispose(&buf);
+
+			if (error < 0)
+				return error;
+		}
+
 		if (git_vector_insert(&t->heads, &ref->head) < 0)
 			return -1;
 	}
@@ -81,26 +190,46 @@ int git_smart__update_heads(transport_smart *t)
 	return 0;
 }
 
+static void free_symrefs(git_vector *symrefs)
+{
+	git_refspec *spec;
+	size_t i;
+
+	git_vector_foreach(symrefs, i, spec) {
+		git_refspec__dispose(spec);
+		git__free(spec);
+	}
+
+	git_vector_free(symrefs);
+}
+
 static int git_smart__connect(
 	git_transport *transport,
 	const char *url,
-	git_cred_acquire_cb cred_acquire_cb,
+	git_credential_acquire_cb cred_acquire_cb,
 	void *cred_acquire_payload,
+	const git_proxy_options *proxy,
 	int direction,
 	int flags)
 {
-	transport_smart *t = (transport_smart *)transport;
+	transport_smart *t = GIT_CONTAINER_OF(transport, transport_smart, parent);
 	git_smart_subtransport_stream *stream;
 	int error;
 	git_pkt *pkt;
 	git_pkt_ref *first;
+	git_vector symrefs;
 	git_smart_service_t service;
 
 	if (git_smart__reset_stream(t, true) < 0)
 		return -1;
 
 	t->url = git__strdup(url);
-	GITERR_CHECK_ALLOC(t->url);
+	GIT_ERROR_CHECK_ALLOC(t->url);
+
+	git_proxy_options_clear(&t->proxy);
+
+	if (git_proxy_options_dup(&t->proxy, proxy) < 0)
+		return -1;
 
 	t->direction = direction;
 	t->flags = flags;
@@ -112,7 +241,7 @@ static int git_smart__connect(
 	else if (GIT_DIRECTION_PUSH == t->direction)
 		service = GIT_SERVICE_RECEIVEPACK_LS;
 	else {
-		giterr_set(GITERR_NET, "Invalid direction");
+		git_error_set(GIT_ERROR_NET, "invalid direction");
 		return -1;
 	}
 
@@ -122,7 +251,7 @@ static int git_smart__connect(
 	/* Save off the current stream (i.e. socket) that we are working with */
 	t->current_stream = stream;
 
-	gitno_buffer_setup_callback(NULL, &t->buffer, t->buffer_data, sizeof(t->buffer_data), git_smart__recv_cb, t);
+	gitno_buffer_setup_callback(&t->buffer, t->buffer_data, sizeof(t->buffer_data), git_smart__recv_cb, t);
 
 	/* 2 flushes for RPC; 1 for stateful */
 	if ((error = git_smart__store_refs(t, t->rpc ? 2 : 1)) < 0)
@@ -133,7 +262,7 @@ static int git_smart__connect(
 		pkt = (git_pkt *)git_vector_get(&t->refs, 0);
 
 		if (!pkt || GIT_PKT_COMMENT != pkt->type) {
-			giterr_set(GITERR_NET, "Invalid response");
+			git_error_set(GIT_ERROR_NET, "invalid response");
 			return -1;
 		} else {
 			/* Remove the comment pkt from the list */
@@ -145,37 +274,53 @@ static int git_smart__connect(
 	/* We now have loaded the refs. */
 	t->have_refs = 1;
 
-	first = (git_pkt_ref *)git_vector_get(&t->refs, 0);
+	pkt = (git_pkt *)git_vector_get(&t->refs, 0);
+	if (pkt && GIT_PKT_REF != pkt->type) {
+		git_error_set(GIT_ERROR_NET, "invalid response");
+		return -1;
+	}
+	first = (git_pkt_ref *)pkt;
+
+	if ((error = git_vector_init(&symrefs, 1, NULL)) < 0)
+		return error;
 
 	/* Detect capabilities */
-	if (git_smart__detect_caps(first, &t->caps) < 0)
-		return -1;
+	if ((error = git_smart__detect_caps(first, &t->caps, &symrefs)) == 0) {
+		/* If the only ref in the list is capabilities^{} with OID_ZERO, remove it */
+		if (1 == t->refs.length && !strcmp(first->head.name, "capabilities^{}") &&
+			git_oid_is_zero(&first->head.oid)) {
+			git_vector_clear(&t->refs);
+			git_pkt_free((git_pkt *)first);
+		}
 
-	/* If the only ref in the list is capabilities^{} with OID_ZERO, remove it */
-	if (1 == t->refs.length && !strcmp(first->head.name, "capabilities^{}") &&
-		git_oid_iszero(&first->head.oid)) {
-		git_vector_clear(&t->refs);
-		git_pkt_free((git_pkt *)first);
+		/* Keep a list of heads for _ls */
+		git_smart__update_heads(t, &symrefs);
+	} else if (error == GIT_ENOTFOUND) {
+		/* There was no ref packet received, or the cap list was empty */
+		error = 0;
+	} else {
+		git_error_set(GIT_ERROR_NET, "invalid response");
+		goto cleanup;
 	}
 
-	/* Keep a list of heads for _ls */
-	git_smart__update_heads(t);
-
-	if (t->rpc && git_smart__reset_stream(t, false) < 0)
-		return -1;
+	if (t->rpc && (error = git_smart__reset_stream(t, false)) < 0)
+		goto cleanup;
 
 	/* We're now logically connected. */
 	t->connected = 1;
 
-	return 0;
+cleanup:
+	free_symrefs(&symrefs);
+
+	return error;
 }
 
 static int git_smart__ls(const git_remote_head ***out, size_t *size, git_transport *transport)
 {
-	transport_smart *t = (transport_smart *)transport;
+	transport_smart *t = GIT_CONTAINER_OF(transport, transport_smart, parent);
 
 	if (!t->have_refs) {
-		giterr_set(GITERR_NET, "The transport has not yet loaded the refs");
+		git_error_set(GIT_ERROR_NET, "the transport has not yet loaded the refs");
 		return -1;
 	}
 
@@ -187,7 +332,7 @@ static int git_smart__ls(const git_remote_head ***out, size_t *size, git_transpo
 
 int git_smart__negotiation_step(git_transport *transport, void *data, size_t len)
 {
-	transport_smart *t = (transport_smart *)transport;
+	transport_smart *t = GIT_CONTAINER_OF(transport, transport_smart, parent);
 	git_smart_subtransport_stream *stream;
 	int error;
 
@@ -195,7 +340,7 @@ int git_smart__negotiation_step(git_transport *transport, void *data, size_t len
 		return -1;
 
 	if (GIT_DIRECTION_FETCH != t->direction) {
-		giterr_set(GITERR_NET, "This operation is only valid for fetch");
+		git_error_set(GIT_ERROR_NET, "this operation is only valid for fetch");
 		return -1;
 	}
 
@@ -203,7 +348,7 @@ int git_smart__negotiation_step(git_transport *transport, void *data, size_t len
 		return error;
 
 	/* If this is a stateful implementation, the stream we get back should be the same */
-	assert(t->rpc || t->current_stream == stream);
+	GIT_ASSERT(t->rpc || t->current_stream == stream);
 
 	/* Save off the current stream (i.e. socket) that we are working with */
 	t->current_stream = stream;
@@ -211,7 +356,7 @@ int git_smart__negotiation_step(git_transport *transport, void *data, size_t len
 	if ((error = stream->write(stream, (const char *)data, len)) < 0)
 		return error;
 
-	gitno_buffer_setup_callback(NULL, &t->buffer, t->buffer_data, sizeof(t->buffer_data), git_smart__recv_cb, t);
+	gitno_buffer_setup_callback(&t->buffer, t->buffer_data, sizeof(t->buffer_data), git_smart__recv_cb, t);
 
 	return 0;
 }
@@ -224,7 +369,7 @@ int git_smart__get_push_stream(transport_smart *t, git_smart_subtransport_stream
 		return -1;
 
 	if (GIT_DIRECTION_PUSH != t->direction) {
-		giterr_set(GITERR_NET, "This operation is only valid for push");
+		git_error_set(GIT_ERROR_NET, "this operation is only valid for push");
 		return -1;
 	}
 
@@ -232,33 +377,33 @@ int git_smart__get_push_stream(transport_smart *t, git_smart_subtransport_stream
 		return error;
 
 	/* If this is a stateful implementation, the stream we get back should be the same */
-	assert(t->rpc || t->current_stream == *stream);
+	GIT_ASSERT(t->rpc || t->current_stream == *stream);
 
 	/* Save off the current stream (i.e. socket) that we are working with */
 	t->current_stream = *stream;
 
-	gitno_buffer_setup_callback(NULL, &t->buffer, t->buffer_data, sizeof(t->buffer_data), git_smart__recv_cb, t);
+	gitno_buffer_setup_callback(&t->buffer, t->buffer_data, sizeof(t->buffer_data), git_smart__recv_cb, t);
 
 	return 0;
 }
 
 static void git_smart__cancel(git_transport *transport)
 {
-	transport_smart *t = (transport_smart *)transport;
+	transport_smart *t = GIT_CONTAINER_OF(transport, transport_smart, parent);
 
-	git_atomic_set(&t->cancelled, 1);
+	git_atomic32_set(&t->cancelled, 1);
 }
 
 static int git_smart__is_connected(git_transport *transport)
 {
-	transport_smart *t = (transport_smart *)transport;
+	transport_smart *t = GIT_CONTAINER_OF(transport, transport_smart, parent);
 
 	return t->connected;
 }
 
 static int git_smart__read_flags(git_transport *transport, int *flags)
 {
-	transport_smart *t = (transport_smart *)transport;
+	transport_smart *t = GIT_CONTAINER_OF(transport, transport_smart, parent);
 
 	*flags = t->flags;
 
@@ -267,11 +412,23 @@ static int git_smart__read_flags(git_transport *transport, int *flags)
 
 static int git_smart__close(git_transport *transport)
 {
-	transport_smart *t = (transport_smart *)transport;
+	transport_smart *t = GIT_CONTAINER_OF(transport, transport_smart, parent);
 	git_vector *common = &t->common;
 	unsigned int i;
 	git_pkt *p;
 	int ret;
+	git_smart_subtransport_stream *stream;
+	const char flush[] = "0000";
+
+	/*
+	 * If we're still connected at this point and not using RPC,
+	 * we should say goodbye by sending a flush, or git-daemon
+	 * will complain that we disconnected unexpectedly.
+	 */
+	if (t->connected && !t->rpc &&
+	    !t->wrapped->action(&stream, t->wrapped, t->url, GIT_SERVICE_UPLOADPACK)) {
+		t->current_stream->write(t->current_stream, flush, 4);
+	}
 
 	ret = git_smart__reset_stream(t, true);
 
@@ -292,7 +449,7 @@ static int git_smart__close(git_transport *transport)
 
 static void git_smart__free(git_transport *transport)
 {
-	transport_smart *t = (transport_smart *)transport;
+	transport_smart *t = GIT_CONTAINER_OF(transport, transport_smart, parent);
 	git_vector *refs = &t->refs;
 	unsigned int i;
 	git_pkt *p;
@@ -308,6 +465,9 @@ static void git_smart__free(git_transport *transport)
 		git_pkt_free(p);
 
 	git_vector_free(refs);
+	git__free((char *)t->proxy.url);
+
+	git_strarray_dispose(&t->custom_headers);
 
 	git__free(t);
 }
@@ -319,6 +479,39 @@ static int ref_name_cmp(const void *a, const void *b)
 	return strcmp(ref_a->head.name, ref_b->head.name);
 }
 
+int git_transport_smart_certificate_check(git_transport *transport, git_cert *cert, int valid, const char *hostname)
+{
+	transport_smart *t = GIT_CONTAINER_OF(transport, transport_smart, parent);
+
+	GIT_ASSERT_ARG(transport);
+	GIT_ASSERT_ARG(cert);
+	GIT_ASSERT_ARG(hostname);
+
+	if (!t->certificate_check_cb)
+		return GIT_PASSTHROUGH;
+
+	return t->certificate_check_cb(cert, valid, hostname, t->message_cb_payload);
+}
+
+int git_transport_smart_credentials(git_credential **out, git_transport *transport, const char *user, int methods)
+{
+	transport_smart *t = GIT_CONTAINER_OF(transport, transport_smart, parent);
+
+	GIT_ASSERT_ARG(out);
+	GIT_ASSERT_ARG(transport);
+
+	if (!t->cred_acquire_cb)
+		return GIT_PASSTHROUGH;
+
+	return t->cred_acquire_cb(out, t->url, user, methods, t->cred_acquire_payload);
+}
+
+int git_transport_smart_proxy_options(git_proxy_options *out, git_transport *transport)
+{
+	transport_smart *t = GIT_CONTAINER_OF(transport, transport_smart, parent);
+	return git_proxy_options_dup(out, &t->proxy);
+}
+
 int git_transport_smart(git_transport **out, git_remote *owner, void *param)
 {
 	transport_smart *t;
@@ -327,11 +520,12 @@ int git_transport_smart(git_transport **out, git_remote *owner, void *param)
 	if (!param)
 		return -1;
 
-	t = git__calloc(sizeof(transport_smart), 1);
-	GITERR_CHECK_ALLOC(t);
+	t = git__calloc(1, sizeof(transport_smart));
+	GIT_ERROR_CHECK_ALLOC(t);
 
 	t->parent.version = GIT_TRANSPORT_VERSION;
 	t->parent.set_callbacks = git_smart__set_callbacks;
+	t->parent.set_custom_headers = git_smart__set_custom_headers;
 	t->parent.connect = git_smart__connect;
 	t->parent.close = git_smart__close;
 	t->parent.free = git_smart__free;
@@ -342,7 +536,7 @@ int git_transport_smart(git_transport **out, git_remote *owner, void *param)
 	t->parent.is_connected = git_smart__is_connected;
 	t->parent.read_flags = git_smart__read_flags;
 	t->parent.cancel = git_smart__cancel;
-	
+
 	t->owner = owner;
 	t->rpc = definition->rpc;
 
@@ -356,10 +550,10 @@ int git_transport_smart(git_transport **out, git_remote *owner, void *param)
 		return -1;
 	}
 
-	if (definition->callback(&t->wrapped, &t->parent) < 0) {
+	if (definition->callback(&t->wrapped, &t->parent, definition->param) < 0) {
 		git__free(t);
 		return -1;
-	}	
+	}
 
 	*out = (git_transport *) t;
 	return 0;

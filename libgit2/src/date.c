@@ -204,7 +204,7 @@ static int is_date(int year, int month, int day, struct tm *now_tm, time_t now, 
 	if (month > 0 && month < 13 && day > 0 && day < 32) {
 		struct tm check = *tm;
 		struct tm *r = (now_tm ? &check : tm);
-		time_t specified;
+		git_time_t specified;
 
 		r->tm_mon = month - 1;
 		r->tm_mday = day;
@@ -722,7 +722,7 @@ static const char *approxidate_alpha(const char *date, struct tm *tm, struct tm 
 	while (tl->type) {
 		size_t len = strlen(tl->type);
 		if (match_string(date, tl->type) >= len-1) {
-			update_tm(tm, now, tl->length * *num);
+			update_tm(tm, now, tl->length * (unsigned long)*num);
 			*num = 0;
 			*touched = 1;
 			return end;
@@ -874,3 +874,32 @@ int git__date_parse(git_time_t *out, const char *date)
 	*out = approxidate_str(date, time_sec, &error_ret);
    return error_ret;
 }
+
+int git__date_rfc2822_fmt(char *out, size_t len, const git_time *date)
+{
+	int written;
+	struct tm gmt;
+	time_t t;
+
+	GIT_ASSERT_ARG(out);
+	GIT_ASSERT_ARG(date);
+
+	t = (time_t) (date->time + date->offset * 60);
+
+	if (p_gmtime_r (&t, &gmt) == NULL)
+		return -1;
+
+	written = p_snprintf(out, len, "%.3s, %u %.3s %.4u %02u:%02u:%02u %+03d%02d",
+		weekday_names[gmt.tm_wday],
+		gmt.tm_mday,
+		month_names[gmt.tm_mon],
+		gmt.tm_year + 1900,
+		gmt.tm_hour, gmt.tm_min, gmt.tm_sec,
+		date->offset / 60, date->offset % 60);
+
+	if (written < 0 || (written > (int) len - 1))
+		return -1;
+
+	return 0;
+}
+

@@ -4,11 +4,14 @@
  * This file is part of libgit2, distributed under the GNU GPL v2 with
  * a Linking Exception. For full terms see the included COPYING file.
  */
-#include "common.h"
+
 #include "posix.h"
+
 #include "path.h"
 #include <stdio.h>
 #include <ctype.h>
+
+size_t p_fsync__cnt = 0;
 
 #ifndef GIT_WIN32
 
@@ -25,11 +28,11 @@ int p_getaddrinfo(
 
 	GIT_UNUSED(hints);
 
-	if ((ainfo = malloc(sizeof(struct addrinfo))) == NULL)
+	if ((ainfo = git__malloc(sizeof(struct addrinfo))) == NULL)
 		return -1;
 
 	if ((ainfo->ai_hostent = gethostbyname(host)) == NULL) {
-		free(ainfo);
+		git__free(ainfo);
 		return -2;
 	}
 
@@ -38,7 +41,7 @@ int p_getaddrinfo(
 	if (ainfo->ai_servent)
 		ainfo->ai_port = ainfo->ai_servent->s_port;
 	else
-		ainfo->ai_port = atol(port);
+		ainfo->ai_port = htons(atol(port));
 
 	memcpy(&ainfo->ai_addr_in.sin_addr,
 			ainfo->ai_hostent->h_addr_list[0],
@@ -62,8 +65,11 @@ int p_getaddrinfo(
 	ai = ainfo;
 
 	for (p = 1; ainfo->ai_hostent->h_addr_list[p] != NULL; p++) {
-		ai->ai_next = malloc(sizeof(struct addrinfo));
-		memcpy(&ai->ai_next, ainfo, sizeof(struct addrinfo));
+		if (!(ai->ai_next = git__malloc(sizeof(struct addrinfo)))) {
+			p_freeaddrinfo(ainfo);
+			return -1;
+		}
+		memcpy(ai->ai_next, ainfo, sizeof(struct addrinfo));
 		memcpy(&ai->ai_next->ai_addr_in.sin_addr,
 			ainfo->ai_hostent->h_addr_list[p],
 			ainfo->ai_hostent->h_length);
@@ -83,7 +89,7 @@ void p_freeaddrinfo(struct addrinfo *info)
 
 	while(p != NULL) {
 		next = p->ai_next;
-		free(p);
+		git__free(p);
 		p = next;
 	}
 }
@@ -99,9 +105,16 @@ const char *p_gai_strerror(int ret)
 
 #endif /* NO_ADDRINFO */
 
-int p_open(const char *path, int flags, ...)
+int p_open(const char *path, volatile int flags, ...)
 {
 	mode_t mode = 0;
+
+	#ifdef GIT_DEBUG_STRICT_OPEN
+	if (strstr(path, "//") != NULL) {
+		errno = EACCES;
+		return -1;
+	}
+	#endif
 
 	if (flags & O_CREAT) {
 		va_list arg_list;
@@ -123,7 +136,8 @@ int p_getcwd(char *buffer_out, size_t size)
 {
 	char *cwd_buffer;
 
-	assert(buffer_out && size > 0);
+	GIT_ASSERT_ARG(buffer_out);
+	GIT_ASSERT_ARG(size > 0);
 
 	cwd_buffer = getcwd(buffer_out, size);
 
@@ -151,15 +165,22 @@ int p_rename(const char *from, const char *to)
 
 #endif /* GIT_WIN32 */
 
-int p_read(git_file fd, void *buf, size_t cnt)
+ssize_t p_read(git_file fd, void *buf, size_t cnt)
 {
 	char *b = buf;
+
+	if (!git__is_ssizet(cnt)) {
+#ifdef GIT_WIN32
+		SetLastError(ERROR_INVALID_PARAMETER);
+#endif
+		errno = EINVAL;
+		return -1;
+	}
 
 	while (cnt) {
 		ssize_t r;
 #ifdef GIT_WIN32
-		assert((size_t)((unsigned int)cnt) == cnt);
-		r = read(fd, b, (unsigned int)cnt);
+		r = read(fd, b, cnt > INT_MAX ? INT_MAX : (unsigned int)cnt);
 #else
 		r = read(fd, b, cnt);
 #endif
@@ -173,7 +194,7 @@ int p_read(git_file fd, void *buf, size_t cnt)
 		cnt -= r;
 		b += r;
 	}
-	return (int)(b - (char *)buf);
+	return (b - (char *)buf);
 }
 
 int p_write(git_file fd, const void *buf, size_t cnt)
@@ -183,13 +204,13 @@ int p_write(git_file fd, const void *buf, size_t cnt)
 	while (cnt) {
 		ssize_t r;
 #ifdef GIT_WIN32
-		assert((size_t)((unsigned int)cnt) == cnt);
+		GIT_ASSERT((size_t)((unsigned int)cnt) == cnt);
 		r = write(fd, b, (unsigned int)cnt);
 #else
 		r = write(fd, b, cnt);
 #endif
 		if (r < 0) {
-			if (errno == EINTR || errno == EAGAIN)
+			if (errno == EINTR || GIT_ISBLOCKED(errno))
 				continue;
 			return -1;
 		}
@@ -203,4 +224,80 @@ int p_write(git_file fd, const void *buf, size_t cnt)
 	return 0;
 }
 
+#ifdef NO_MMAP
 
+#include "map.h"
+
+int git__page_size(size_t *page_size)
+{
+	/* dummy; here we don't need any alignment anyway */
+	*page_size = 4096;
+	return 0;
+}
+
+int git__mmap_alignment(size_t *alignment)
+{
+	/* dummy; here we don't need any alignment anyway */
+	*alignment = 4096;
+	return 0;
+}
+
+
+int p_mmap(git_map *out, size_t len, int prot, int flags, int fd, off64_t offset)
+{
+	const char *ptr;
+	size_t remaining_len;
+
+	GIT_MMAP_VALIDATE(out, len, prot, flags);
+
+	/* writes cannot be emulated without handling pagefaults since write happens by
+	 * writing to mapped memory */
+	if (prot & GIT_PROT_WRITE) {
+		git_error_set(GIT_ERROR_OS, "trying to map %s-writeable",
+				((flags & GIT_MAP_TYPE) == GIT_MAP_SHARED) ? "shared": "private");
+		return -1;
+	}
+
+	if (!git__is_ssizet(len)) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	out->len = 0;
+	out->data = git__malloc(len);
+	GIT_ERROR_CHECK_ALLOC(out->data);
+
+	remaining_len = len;
+	ptr = (const char *)out->data;
+	while (remaining_len > 0) {
+		ssize_t nb;
+		HANDLE_EINTR(nb, p_pread(fd, (void *)ptr, remaining_len, offset));
+		if (nb <= 0) {
+			git_error_set(GIT_ERROR_OS, "mmap emulation failed");
+			git__free(out->data);
+			out->data = NULL;
+			return -1;
+		}
+
+		ptr += nb;
+		offset += nb;
+		remaining_len -= nb;
+	}
+
+	out->len = len;
+	return 0;
+}
+
+int p_munmap(git_map *map)
+{
+	GIT_ASSERT_ARG(map);
+	git__free(map->data);
+
+	/* Initializing will help debug use-after-free */
+	map->len = 0;
+	map->data = NULL;
+
+	return 0;
+}
+
+#endif

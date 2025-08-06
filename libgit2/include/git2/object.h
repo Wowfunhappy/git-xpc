@@ -10,6 +10,7 @@
 #include "common.h"
 #include "types.h"
 #include "oid.h"
+#include "buffer.h"
 
 /**
  * @file git2/object.h
@@ -20,6 +21,8 @@
  */
 GIT_BEGIN_DECL
 
+#define GIT_OBJECT_SIZE_MAX UINT64_MAX
+
 /**
  * Lookup a reference to one of the objects in a repository.
  *
@@ -29,7 +32,7 @@ GIT_BEGIN_DECL
  *
  * The 'type' parameter must match the type of the object
  * in the odb; the method will fail otherwise.
- * The special value 'GIT_OBJ_ANY' may be passed to let
+ * The special value 'GIT_OBJECT_ANY' may be passed to let
  * the method guess the object's type.
  *
  * @param object pointer to the looked-up object
@@ -42,7 +45,7 @@ GIT_EXTERN(int) git_object_lookup(
 		git_object **object,
 		git_repository *repo,
 		const git_oid *id,
-		git_otype type);
+		git_object_t type);
 
 /**
  * Lookup a reference to one of the objects in a repository,
@@ -61,7 +64,7 @@ GIT_EXTERN(int) git_object_lookup(
  *
  * The 'type' parameter must match the type of the object
  * in the odb; the method will fail otherwise.
- * The special value 'GIT_OBJ_ANY' may be passed to let
+ * The special value 'GIT_OBJECT_ANY' may be passed to let
  * the method guess the object's type.
  *
  * @param object_out pointer where to store the looked-up object
@@ -76,7 +79,7 @@ GIT_EXTERN(int) git_object_lookup_prefix(
 		git_repository *repo,
 		const git_oid *id,
 		size_t len,
-		git_otype type);
+		git_object_t type);
 
 
 /**
@@ -93,7 +96,7 @@ GIT_EXTERN(int) git_object_lookup_bypath(
 		git_object **out,
 		const git_object *treeish,
 		const char *path,
-		git_otype type);
+		git_object_t type);
 
 /**
  * Get the id (SHA1) of a repository object
@@ -104,12 +107,26 @@ GIT_EXTERN(int) git_object_lookup_bypath(
 GIT_EXTERN(const git_oid *) git_object_id(const git_object *obj);
 
 /**
+ * Get a short abbreviated OID string for the object
+ *
+ * This starts at the "core.abbrev" length (default 7 characters) and
+ * iteratively extends to a longer string if that length is ambiguous.
+ * The result will be unambiguous (at least until new objects are added to
+ * the repository).
+ *
+ * @param out Buffer to write string into
+ * @param obj The object to get an ID for
+ * @return 0 on success, <0 for error
+ */
+GIT_EXTERN(int) git_object_short_id(git_buf *out, const git_object *obj);
+
+/**
  * Get the object type of an object
  *
  * @param obj the repository object
  * @return the object's type
  */
-GIT_EXTERN(git_otype) git_object_type(const git_object *obj);
+GIT_EXTERN(git_object_t) git_object_type(const git_object *obj);
 
 /**
  * Get the repository that owns this object
@@ -143,7 +160,7 @@ GIT_EXTERN(git_repository *) git_object_owner(const git_object *obj);
 GIT_EXTERN(void) git_object_free(git_object *object);
 
 /**
- * Convert an object type to it's string representation.
+ * Convert an object type to its string representation.
  *
  * The result is a pointer to a string in static memory and
  * should not be free()'ed.
@@ -151,59 +168,52 @@ GIT_EXTERN(void) git_object_free(git_object *object);
  * @param type object type to convert.
  * @return the corresponding string representation.
  */
-GIT_EXTERN(const char *) git_object_type2string(git_otype type);
+GIT_EXTERN(const char *) git_object_type2string(git_object_t type);
 
 /**
- * Convert a string object type representation to it's git_otype.
+ * Convert a string object type representation to it's git_object_t.
  *
  * @param str the string to convert.
- * @return the corresponding git_otype.
+ * @return the corresponding git_object_t.
  */
-GIT_EXTERN(git_otype) git_object_string2type(const char *str);
+GIT_EXTERN(git_object_t) git_object_string2type(const char *str);
 
 /**
- * Determine if the given git_otype is a valid loose object type.
+ * Determine if the given git_object_t is a valid loose object type.
  *
  * @param type object type to test.
  * @return true if the type represents a valid loose object type,
  * false otherwise.
  */
-GIT_EXTERN(int) git_object_typeisloose(git_otype type);
-
-/**
- * Get the size in bytes for the structure which
- * acts as an in-memory representation of any given
- * object type.
- *
- * For all the core types, this would the equivalent
- * of calling `sizeof(git_commit)` if the core types
- * were not opaque on the external API.
- *
- * @param type object type to get its size
- * @return size in bytes of the object
- */
-GIT_EXTERN(size_t) git_object__size(git_otype type);
+GIT_EXTERN(int) git_object_typeisloose(git_object_t type);
 
 /**
  * Recursively peel an object until an object of the specified type is met.
  *
- * The retrieved `peeled` object is owned by the repository and should be
- * closed with the `git_object_free` method.
+ * If the query cannot be satisfied due to the object model,
+ * GIT_EINVALIDSPEC will be returned (e.g. trying to peel a blob to a
+ * tree).
  *
- * If you pass `GIT_OBJ_ANY` as the target type, then the object will be
- * peeled until the type changes (e.g. a tag will be chased until the
- * referenced object is no longer a tag).
+ * If you pass `GIT_OBJECT_ANY` as the target type, then the object will
+ * be peeled until the type changes. A tag will be peeled until the
+ * referenced object is no longer a tag, and a commit will be peeled
+ * to a tree. Any other object type will return GIT_EINVALIDSPEC.
+ *
+ * If peeling a tag we discover an object which cannot be peeled to
+ * the target type due to the object model, GIT_EPEEL will be
+ * returned.
+ *
+ * You must free the returned object.
  *
  * @param peeled Pointer to the peeled git_object
  * @param object The object to be processed
- * @param target_type The type of the requested object (GIT_OBJ_COMMIT,
- * GIT_OBJ_TAG, GIT_OBJ_TREE, GIT_OBJ_BLOB or GIT_OBJ_ANY).
- * @return 0 on success, GIT_EAMBIGUOUS, GIT_ENOTFOUND or an error code
+ * @param target_type The type of the requested object (a GIT_OBJECT_ value)
+ * @return 0 on success, GIT_EINVALIDSPEC, GIT_EPEEL, or an error code
  */
 GIT_EXTERN(int) git_object_peel(
 	git_object **peeled,
 	const git_object *object,
-	git_otype target_type);
+	git_object_t target_type);
 
 /**
  * Create an in-memory copy of a Git object. The copy must be

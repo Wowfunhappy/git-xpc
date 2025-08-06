@@ -4,46 +4,34 @@
  * This file is part of libgit2, distributed under the GNU GPL v2 with
  * a Linking Exception. For full terms see the included COPYING file.
  */
+
+#include "dir.h"
+
 #define GIT__WIN32_NO_WRAP_DIR
 #include "posix.h"
 
-static int init_filter(char *filter, size_t n, const char *dir)
-{
-	size_t len = strlen(dir);
-
-	if (len+3 >= n)
-		return 0;
-
-	strcpy(filter, dir);
-	if (len && dir[len-1] != '/')
-		strcat(filter, "/");
-	strcat(filter, "*");
-
-	return 1;
-}
-
 git__DIR *git__opendir(const char *dir)
 {
-	git_win32_path_as_utf8 filter;
 	git_win32_path filter_w;
 	git__DIR *new = NULL;
-	size_t dirlen;
+	size_t dirlen, alloclen;
 
-	if (!dir || !init_filter(filter, sizeof(filter), dir))
+	if (!dir || !git_win32__findfirstfile_filter(filter_w, dir))
 		return NULL;
 
 	dirlen = strlen(dir);
 
-	new = git__calloc(sizeof(*new) + dirlen + 1, 1);
-	if (!new)
+	if (GIT_ADD_SIZET_OVERFLOW(&alloclen, sizeof(*new), dirlen) ||
+		GIT_ADD_SIZET_OVERFLOW(&alloclen, alloclen, 1) ||
+		!(new = git__calloc(1, alloclen)))
 		return NULL;
+
 	memcpy(new->dir, dir, dirlen);
 
-	git_win32_path_from_c(filter_w, filter);
 	new->h = FindFirstFileW(filter_w, &new->f);
 
 	if (new->h == INVALID_HANDLE_VALUE) {
-		giterr_set(GITERR_OS, "Could not open directory '%s'", dir);
+		git_error_set(GIT_ERROR_OS, "could not open directory '%s'", dir);
 		git__free(new);
 		return NULL;
 	}
@@ -68,14 +56,14 @@ int git__readdir_ext(
 	else if (!FindNextFileW(d->h, &d->f)) {
 		if (GetLastError() == ERROR_NO_MORE_FILES)
 			return 0;
-		giterr_set(GITERR_OS, "Could not read from directory '%s'", d->dir);
+		git_error_set(GIT_ERROR_OS, "could not read from directory '%s'", d->dir);
 		return -1;
 	}
 
-	if (wcslen(d->f.cFileName) >= sizeof(entry->d_name))
+	/* Convert the path to UTF-8 */
+	if (git_win32_path_to_utf8(entry->d_name, d->f.cFileName) < 0)
 		return -1;
 
-	git_win32_path_to_c(entry->d_name, d->f.cFileName);
 	entry->d_ino = 0;
 
 	*result = entry;
@@ -96,7 +84,6 @@ struct git__dirent *git__readdir(git__DIR *d)
 
 void git__rewinddir(git__DIR *d)
 {
-	git_win32_path_as_utf8 filter;
 	git_win32_path filter_w;
 
 	if (!d)
@@ -108,14 +95,13 @@ void git__rewinddir(git__DIR *d)
 		d->first = 0;
 	}
 
-	if (!init_filter(filter, sizeof(filter), d->dir))
+	if (!git_win32__findfirstfile_filter(filter_w, d->dir))
 		return;
 
-	git_win32_path_from_c(filter_w, filter);
 	d->h = FindFirstFileW(filter_w, &d->f);
 
 	if (d->h == INVALID_HANDLE_VALUE)
-		giterr_set(GITERR_OS, "Could not open directory '%s'", d->dir);
+		git_error_set(GIT_ERROR_OS, "could not open directory '%s'", d->dir);
 	else
 		d->first = 1;
 }

@@ -52,7 +52,7 @@
 typedef enum {
 	GTCheckoutStrategyNone = GIT_CHECKOUT_NONE,
 	GTCheckoutStrategySafe = GIT_CHECKOUT_SAFE,
-	GTCheckoutStrategySafeCreate = GIT_CHECKOUT_SAFE_CREATE,
+	GTCheckoutStrategySafeCreate = GIT_CHECKOUT_SAFE, // GIT_CHECKOUT_SAFE_CREATE doesn't exist in libgit2 1.3.2
 	GTCheckoutStrategyForce = GIT_CHECKOUT_FORCE,
 	GTCheckoutStrategyAllowConflicts = GIT_CHECKOUT_ALLOW_CONFLICTS,
 	GTCheckoutStrategyRemoveUntracked = GIT_CHECKOUT_REMOVE_UNTRACKED,
@@ -79,10 +79,10 @@ typedef enum {
 
 // Transport flags sent as options to +cloneFromURL... method
 typedef enum {
-	GTTransportFlagsNone = GIT_TRANSPORTFLAGS_NONE,
+	GTTransportFlagsNone = 0, // GIT_TRANSPORTFLAGS_NONE not in main header
 	// If you pass this flag and the connection is secured with SSL/TLS,
 	// the authenticity of the server certificate will not be verified.
-	GTTransportFlagsNoCheckCert = GIT_TRANSPORTFLAGS_NO_CHECK_CERT,
+	GTTransportFlagsNoCheckCert = 1, // GIT_TRANSPORTFLAGS_NO_CHECK_CERT not in main header
 } GTTransportFlags;
 
 // An `NSNumber` wrapped `GTTransportFlags`, documented above.

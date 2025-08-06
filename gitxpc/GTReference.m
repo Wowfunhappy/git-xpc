@@ -124,7 +124,7 @@ static NSString *referenceTypeToString(GTReferenceType type) {
 	NSParameterAssert(newName != nil);
 	
 	git_reference *newRef = NULL;
-	int gitError = git_reference_rename(&newRef, self.git_reference, newName.UTF8String, 0);
+	int gitError = git_reference_rename(&newRef, self.git_reference, newName.UTF8String, 0, NULL);
 	if (gitError != GIT_OK) {
 		if (error != NULL) *error = [NSError git_errorFor:gitError description:@"Failed to rename reference %@ to %@.", self.name, newName];
 		return NO;
@@ -178,9 +178,9 @@ static NSString *referenceTypeToString(GTReferenceType type) {
 		GTOID *oid = [[GTOID alloc] initWithSHA:newTarget error:error];
 		if (oid == nil) return nil;
 		
-		gitError = git_reference_set_target(&newRef, self.git_reference, oid.git_oid);
+		gitError = git_reference_set_target(&newRef, self.git_reference, oid.git_oid, NULL);
 	} else {
-		gitError = git_reference_symbolic_set_target(&newRef, self.git_reference, newTarget.UTF8String);
+		gitError = git_reference_symbolic_set_target(&newRef, self.git_reference, newTarget.UTF8String, NULL);
 	}
 
 	if (gitError != GIT_OK) {

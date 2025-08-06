@@ -1,2 +1,0 @@
-/Volumes/Mavericks\ VM\ HD/Volumes/Mavericks\ VM\ HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/git2.dir/Volumes/Mavericks_VM_HD/Volumes/Mavericks_VM_HD/Volumes/Mavericks_VM_HD/Volumes/Mavericks_VM_HD/Volumes/Mavericks_VM_HD/Volumes/Mavericks_VM_HD/Users/jonathan/Desktop/git-xpc/libgit2/src/transports/winhttp.c.o: \
-  /Volumes/Mavericks\ VM\ HD/Volumes/Mavericks\ VM\ HD/Volumes/Mavericks\ VM\ HD/Volumes/Mavericks\ VM\ HD/Volumes/Mavericks\ VM\ HD/Volumes/Mavericks\ VM\ HD/Users/jonathan/Desktop/git-xpc/libgit2/src/transports/winhttp.c

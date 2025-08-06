@@ -31,7 +31,7 @@ static int flush_pkt(git_pkt **out)
 	git_pkt *pkt;
 
 	pkt = git__malloc(sizeof(git_pkt));
-	GITERR_CHECK_ALLOC(pkt);
+	GIT_ERROR_CHECK_ALLOC(pkt);
 
 	pkt->type = GIT_PKT_FLUSH;
 	*out = pkt;
@@ -43,34 +43,43 @@ static int flush_pkt(git_pkt **out)
 static int ack_pkt(git_pkt **out, const char *line, size_t len)
 {
 	git_pkt_ack *pkt;
-	GIT_UNUSED(line);
-	GIT_UNUSED(len);
 
 	pkt = git__calloc(1, sizeof(git_pkt_ack));
-	GITERR_CHECK_ALLOC(pkt);
-
+	GIT_ERROR_CHECK_ALLOC(pkt);
 	pkt->type = GIT_PKT_ACK;
-	line += 3;
-	len -= 3;
 
-	if (len >= GIT_OID_HEXSZ) {
-		git_oid_fromstr(&pkt->oid, line + 1);
-		line += GIT_OID_HEXSZ + 1;
-		len -= GIT_OID_HEXSZ + 1;
-	}
+	if (git__prefixncmp(line, len, "ACK "))
+		goto out_err;
+	line += 4;
+	len -= 4;
 
-	if (len >= 7) {
-		if (!git__prefixcmp(line + 1, "continue"))
+	if (len < GIT_OID_HEXSZ || git_oid_fromstr(&pkt->oid, line) < 0)
+		goto out_err;
+	line += GIT_OID_HEXSZ;
+	len -= GIT_OID_HEXSZ;
+
+	if (len && line[0] == ' ') {
+		line++;
+		len--;
+
+		if (!git__prefixncmp(line, len, "continue"))
 			pkt->status = GIT_ACK_CONTINUE;
-		if (!git__prefixcmp(line + 1, "common"))
+		else if (!git__prefixncmp(line, len, "common"))
 			pkt->status = GIT_ACK_COMMON;
-		if (!git__prefixcmp(line + 1, "ready"))
+		else if (!git__prefixncmp(line, len, "ready"))
 			pkt->status = GIT_ACK_READY;
+		else
+			goto out_err;
 	}
 
 	*out = (git_pkt *) pkt;
 
 	return 0;
+
+out_err:
+	git_error_set(GIT_ERROR_NET, "error parsing ACK pkt-line");
+	git__free(pkt);
+	return -1;
 }
 
 static int nak_pkt(git_pkt **out)
@@ -78,22 +87,9 @@ static int nak_pkt(git_pkt **out)
 	git_pkt *pkt;
 
 	pkt = git__malloc(sizeof(git_pkt));
-	GITERR_CHECK_ALLOC(pkt);
+	GIT_ERROR_CHECK_ALLOC(pkt);
 
 	pkt->type = GIT_PKT_NAK;
-	*out = pkt;
-
-	return 0;
-}
-
-static int pack_pkt(git_pkt **out)
-{
-	git_pkt *pkt;
-
-	pkt = git__malloc(sizeof(git_pkt));
-	GITERR_CHECK_ALLOC(pkt);
-
-	pkt->type = GIT_PKT_PACK;
 	*out = pkt;
 
 	return 0;
@@ -102,9 +98,12 @@ static int pack_pkt(git_pkt **out)
 static int comment_pkt(git_pkt **out, const char *line, size_t len)
 {
 	git_pkt_comment *pkt;
+	size_t alloclen;
 
-	pkt = git__malloc(sizeof(git_pkt_comment) + len + 1);
-	GITERR_CHECK_ALLOC(pkt);
+	GIT_ERROR_CHECK_ALLOC_ADD(&alloclen, sizeof(git_pkt_comment), len);
+	GIT_ERROR_CHECK_ALLOC_ADD(&alloclen, alloclen, 1);
+	pkt = git__malloc(alloclen);
+	GIT_ERROR_CHECK_ALLOC(pkt);
 
 	pkt->type = GIT_PKT_COMMENT;
 	memcpy(pkt->comment, line, len);
@@ -117,35 +116,49 @@ static int comment_pkt(git_pkt **out, const char *line, size_t len)
 
 static int err_pkt(git_pkt **out, const char *line, size_t len)
 {
-	git_pkt_err *pkt;
+	git_pkt_err *pkt = NULL;
+	size_t alloclen;
 
 	/* Remove "ERR " from the line */
+	if (git__prefixncmp(line, len, "ERR "))
+		goto out_err;
 	line += 4;
 	len -= 4;
-	pkt = git__malloc(sizeof(git_pkt_err) + len + 1);
-	GITERR_CHECK_ALLOC(pkt);
 
+	GIT_ERROR_CHECK_ALLOC_ADD(&alloclen, sizeof(git_pkt_progress), len);
+	GIT_ERROR_CHECK_ALLOC_ADD(&alloclen, alloclen, 1);
+	pkt = git__malloc(alloclen);
+	GIT_ERROR_CHECK_ALLOC(pkt);
 	pkt->type = GIT_PKT_ERR;
-	pkt->len = (int)len;
+	pkt->len = len;
+
 	memcpy(pkt->error, line, len);
 	pkt->error[len] = '\0';
 
 	*out = (git_pkt *) pkt;
 
 	return 0;
+
+out_err:
+	git_error_set(GIT_ERROR_NET, "error parsing ERR pkt-line");
+	git__free(pkt);
+	return -1;
 }
 
 static int data_pkt(git_pkt **out, const char *line, size_t len)
 {
 	git_pkt_data *pkt;
+	size_t alloclen;
 
 	line++;
 	len--;
-	pkt = git__malloc(sizeof(git_pkt_data) + len);
-	GITERR_CHECK_ALLOC(pkt);
+
+	GIT_ERROR_CHECK_ALLOC_ADD(&alloclen, sizeof(git_pkt_progress), len);
+	pkt = git__malloc(alloclen);
+	GIT_ERROR_CHECK_ALLOC(pkt);
 
 	pkt->type = GIT_PKT_DATA;
-	pkt->len = (int) len;
+	pkt->len = len;
 	memcpy(pkt->data, line, len);
 
 	*out = (git_pkt *) pkt;
@@ -153,17 +166,20 @@ static int data_pkt(git_pkt **out, const char *line, size_t len)
 	return 0;
 }
 
-static int progress_pkt(git_pkt **out, const char *line, size_t len)
+static int sideband_progress_pkt(git_pkt **out, const char *line, size_t len)
 {
 	git_pkt_progress *pkt;
+	size_t alloclen;
 
 	line++;
 	len--;
-	pkt = git__malloc(sizeof(git_pkt_progress) + len);
-	GITERR_CHECK_ALLOC(pkt);
+
+	GIT_ERROR_CHECK_ALLOC_ADD(&alloclen, sizeof(git_pkt_progress), len);
+	pkt = git__malloc(alloclen);
+	GIT_ERROR_CHECK_ALLOC(pkt);
 
 	pkt->type = GIT_PKT_PROGRESS;
-	pkt->len = (int) len;
+	pkt->len = len;
 	memcpy(pkt->data, line, len);
 
 	*out = (git_pkt *) pkt;
@@ -174,11 +190,15 @@ static int progress_pkt(git_pkt **out, const char *line, size_t len)
 static int sideband_error_pkt(git_pkt **out, const char *line, size_t len)
 {
 	git_pkt_err *pkt;
+	size_t alloc_len;
 
 	line++;
 	len--;
-	pkt = git__malloc(sizeof(git_pkt_err) + len + 1);
-	GITERR_CHECK_ALLOC(pkt);
+
+	GIT_ERROR_CHECK_ALLOC_ADD(&alloc_len, sizeof(git_pkt_err), len);
+	GIT_ERROR_CHECK_ALLOC_ADD(&alloc_len, alloc_len, 1);
+	pkt = git__malloc(alloc_len);
+	GIT_ERROR_CHECK_ALLOC(pkt);
 
 	pkt->type = GIT_PKT_ERR;
 	pkt->len = (int)len;
@@ -195,118 +215,146 @@ static int sideband_error_pkt(git_pkt **out, const char *line, size_t len)
  */
 static int ref_pkt(git_pkt **out, const char *line, size_t len)
 {
-	int error;
 	git_pkt_ref *pkt;
+	size_t alloclen;
 
-	pkt = git__malloc(sizeof(git_pkt_ref));
-	GITERR_CHECK_ALLOC(pkt);
-
-	memset(pkt, 0x0, sizeof(git_pkt_ref));
+	pkt = git__calloc(1, sizeof(git_pkt_ref));
+	GIT_ERROR_CHECK_ALLOC(pkt);
 	pkt->type = GIT_PKT_REF;
-	if ((error = git_oid_fromstr(&pkt->head.oid, line)) < 0)
-		goto error_out;
 
-	/* Check for a bit of consistency */
-	if (line[GIT_OID_HEXSZ] != ' ') {
-		giterr_set(GITERR_NET, "Error parsing pkt-line");
-		error = -1;
-		goto error_out;
-	}
+	if (len < GIT_OID_HEXSZ || git_oid_fromstr(&pkt->head.oid, line) < 0)
+		goto out_err;
+	line += GIT_OID_HEXSZ;
+	len -= GIT_OID_HEXSZ;
 
-	/* Jump from the name */
-	line += GIT_OID_HEXSZ + 1;
-	len -= (GIT_OID_HEXSZ + 1);
+	if (git__prefixncmp(line, len, " "))
+		goto out_err;
+	line++;
+	len--;
+
+	if (!len)
+		goto out_err;
 
 	if (line[len - 1] == '\n')
 		--len;
 
-	pkt->head.name = git__malloc(len + 1);
-	GITERR_CHECK_ALLOC(pkt->head.name);
+	GIT_ERROR_CHECK_ALLOC_ADD(&alloclen, len, 1);
+	pkt->head.name = git__malloc(alloclen);
+	GIT_ERROR_CHECK_ALLOC(pkt->head.name);
 
 	memcpy(pkt->head.name, line, len);
 	pkt->head.name[len] = '\0';
 
-	if (strlen(pkt->head.name) < len) {
+	if (strlen(pkt->head.name) < len)
 		pkt->capabilities = strchr(pkt->head.name, '\0') + 1;
-	}
 
 	*out = (git_pkt *)pkt;
 	return 0;
 
-error_out:
+out_err:
+	git_error_set(GIT_ERROR_NET, "error parsing REF pkt-line");
+	if (pkt)
+		git__free(pkt->head.name);
 	git__free(pkt);
-	return error;
+	return -1;
 }
 
 static int ok_pkt(git_pkt **out, const char *line, size_t len)
 {
 	git_pkt_ok *pkt;
-	const char *ptr;
+	size_t alloc_len;
 
 	pkt = git__malloc(sizeof(*pkt));
-	GITERR_CHECK_ALLOC(pkt);
-
+	GIT_ERROR_CHECK_ALLOC(pkt);
 	pkt->type = GIT_PKT_OK;
 
-	line += 3; /* skip "ok " */
-	ptr = strchr(line, '\n');
-	len = ptr - line;
+	if (git__prefixncmp(line, len, "ok "))
+		goto out_err;
+	line += 3;
+	len -= 3;
 
-	pkt->ref = git__malloc(len + 1);
-	GITERR_CHECK_ALLOC(pkt->ref);
+	if (len && line[len - 1] == '\n')
+		--len;
+
+	GIT_ERROR_CHECK_ALLOC_ADD(&alloc_len, len, 1);
+	pkt->ref = git__malloc(alloc_len);
+	GIT_ERROR_CHECK_ALLOC(pkt->ref);
 
 	memcpy(pkt->ref, line, len);
 	pkt->ref[len] = '\0';
 
 	*out = (git_pkt *)pkt;
 	return 0;
+
+out_err:
+	git_error_set(GIT_ERROR_NET, "error parsing OK pkt-line");
+	git__free(pkt);
+	return -1;
 }
 
 static int ng_pkt(git_pkt **out, const char *line, size_t len)
 {
 	git_pkt_ng *pkt;
-	const char *ptr;
+	const char *ptr, *eol;
+	size_t alloclen;
 
 	pkt = git__malloc(sizeof(*pkt));
-	GITERR_CHECK_ALLOC(pkt);
+	GIT_ERROR_CHECK_ALLOC(pkt);
 
+	pkt->ref = NULL;
 	pkt->type = GIT_PKT_NG;
 
-	line += 3; /* skip "ng " */
-	ptr = strchr(line, ' ');
+	eol = line + len;
+
+	if (git__prefixncmp(line, len, "ng "))
+		goto out_err;
+	line += 3;
+
+	if (!(ptr = memchr(line, ' ', eol - line)))
+		goto out_err;
 	len = ptr - line;
 
-	pkt->ref = git__malloc(len + 1);
-	GITERR_CHECK_ALLOC(pkt->ref);
+	GIT_ERROR_CHECK_ALLOC_ADD(&alloclen, len, 1);
+	pkt->ref = git__malloc(alloclen);
+	GIT_ERROR_CHECK_ALLOC(pkt->ref);
 
 	memcpy(pkt->ref, line, len);
 	pkt->ref[len] = '\0';
 
 	line = ptr + 1;
-	ptr = strchr(line, '\n');
+	if (line >= eol)
+		goto out_err;
+
+	if (!(ptr = memchr(line, '\n', eol - line)))
+		goto out_err;
 	len = ptr - line;
 
-	pkt->msg = git__malloc(len + 1);
-	GITERR_CHECK_ALLOC(pkt->msg);
+	GIT_ERROR_CHECK_ALLOC_ADD(&alloclen, len, 1);
+	pkt->msg = git__malloc(alloclen);
+	GIT_ERROR_CHECK_ALLOC(pkt->msg);
 
 	memcpy(pkt->msg, line, len);
 	pkt->msg[len] = '\0';
 
 	*out = (git_pkt *)pkt;
 	return 0;
+
+out_err:
+	git_error_set(GIT_ERROR_NET, "invalid packet line");
+	git__free(pkt->ref);
+	git__free(pkt);
+	return -1;
 }
 
 static int unpack_pkt(git_pkt **out, const char *line, size_t len)
 {
 	git_pkt_unpack *pkt;
 
-	GIT_UNUSED(len);
-
 	pkt = git__malloc(sizeof(*pkt));
-	GITERR_CHECK_ALLOC(pkt);
-
+	GIT_ERROR_CHECK_ALLOC(pkt);
 	pkt->type = GIT_PKT_UNPACK;
-	if (!git__prefixcmp(line, "unpack ok"))
+
+	if (!git__prefixncmp(line, len, "unpack ok"))
 		pkt->unpack_ok = 1;
 	else
 		pkt->unpack_ok = 0;
@@ -315,27 +363,42 @@ static int unpack_pkt(git_pkt **out, const char *line, size_t len)
 	return 0;
 }
 
-static int32_t parse_len(const char *line)
+static int parse_len(size_t *out, const char *line, size_t linelen)
 {
 	char num[PKT_LEN_SIZE + 1];
-	int i, error;
+	int i, k, error;
 	int32_t len;
 	const char *num_end;
+
+	/* Not even enough for the length */
+	if (linelen < PKT_LEN_SIZE)
+		return GIT_EBUFS;
 
 	memcpy(num, line, PKT_LEN_SIZE);
 	num[PKT_LEN_SIZE] = '\0';
 
 	for (i = 0; i < PKT_LEN_SIZE; ++i) {
 		if (!isxdigit(num[i])) {
-			giterr_set(GITERR_NET, "Found invalid hex digit in length");
+			/* Make sure there are no special characters before passing to error message */
+			for (k = 0; k < PKT_LEN_SIZE; ++k) {
+				if(!isprint(num[k])) {
+					num[k] = '.';
+				}
+			}
+
+			git_error_set(GIT_ERROR_NET, "invalid hex digit in length: '%s'", num);
 			return -1;
 		}
 	}
 
-	if ((error = git__strtol32(&len, num, &num_end, 16)) < 0)
+	if ((error = git__strntol32(&len, num, PKT_LEN_SIZE, &num_end, 16)) < 0)
 		return error;
 
-	return len;
+	if (len < 0)
+		return -1;
+
+	*out = (size_t) len;
+	return 0;
 }
 
 /*
@@ -352,87 +415,97 @@ static int32_t parse_len(const char *line)
  */
 
 int git_pkt_parse_line(
-	git_pkt **head, const char *line, const char **out, size_t bufflen)
+	git_pkt **pkt, const char **endptr, const char *line, size_t linelen)
 {
-	int ret;
-	int32_t len;
+	int error;
+	size_t len;
 
-	/* Not even enough for the length */
-	if (bufflen > 0 && bufflen < PKT_LEN_SIZE)
-		return GIT_EBUFS;
-
-	len = parse_len(line);
-	if (len < 0) {
+	if ((error = parse_len(&len, line, linelen)) < 0) {
 		/*
-		 * If we fail to parse the length, it might be because the
-		 * server is trying to send us the packfile already.
+		 * If we fail to parse the length, it might be
+		 * because the server is trying to send us the
+		 * packfile already or because we do not yet have
+		 * enough data.
 		 */
-		if (bufflen >= 4 && !git__prefixcmp(line, "PACK")) {
-			giterr_clear();
-			*out = line;
-			return pack_pkt(head);
-		}
-
-		return (int)len;
+		if (error == GIT_EBUFS)
+			;
+		else if (!git__prefixncmp(line, linelen, "PACK"))
+			git_error_set(GIT_ERROR_NET, "unexpected pack file");
+		else
+			git_error_set(GIT_ERROR_NET, "bad packet length");
+		return error;
 	}
 
 	/*
-	 * If we were given a buffer length, then make sure there is
-	 * enough in the buffer to satisfy this line
+	 * Make sure there is enough in the buffer to satisfy
+	 * this line.
 	 */
-	if (bufflen > 0 && bufflen < (size_t)len)
+	if (linelen < len)
 		return GIT_EBUFS;
+
+	/*
+	 * The length has to be exactly 0 in case of a flush
+	 * packet or greater than PKT_LEN_SIZE, as the decoded
+	 * length includes its own encoded length of four bytes.
+	 */
+	if (len != 0 && len < PKT_LEN_SIZE)
+		return GIT_ERROR;
 
 	line += PKT_LEN_SIZE;
 	/*
-	 * TODO: How do we deal with empty lines? Try again? with the next
-	 * line?
+	 * The Git protocol does not specify empty lines as part
+	 * of the protocol. Not knowing what to do with an empty
+	 * line, we should return an error upon hitting one.
 	 */
 	if (len == PKT_LEN_SIZE) {
-		*out = line;
-		return 0;
+		git_error_set_str(GIT_ERROR_NET, "Invalid empty packet");
+		return GIT_ERROR;
 	}
 
 	if (len == 0) { /* Flush pkt */
-		*out = line;
-		return flush_pkt(head);
+		*endptr = line;
+		return flush_pkt(pkt);
 	}
 
 	len -= PKT_LEN_SIZE; /* the encoded length includes its own size */
 
 	if (*line == GIT_SIDE_BAND_DATA)
-		ret = data_pkt(head, line, len);
+		error = data_pkt(pkt, line, len);
 	else if (*line == GIT_SIDE_BAND_PROGRESS)
-		ret = progress_pkt(head, line, len);
+		error = sideband_progress_pkt(pkt, line, len);
 	else if (*line == GIT_SIDE_BAND_ERROR)
-		ret = sideband_error_pkt(head, line, len);
-	else if (!git__prefixcmp(line, "ACK"))
-		ret = ack_pkt(head, line, len);
-	else if (!git__prefixcmp(line, "NAK"))
-		ret = nak_pkt(head);
-	else if (!git__prefixcmp(line, "ERR "))
-		ret = err_pkt(head, line, len);
+		error = sideband_error_pkt(pkt, line, len);
+	else if (!git__prefixncmp(line, len, "ACK"))
+		error = ack_pkt(pkt, line, len);
+	else if (!git__prefixncmp(line, len, "NAK"))
+		error = nak_pkt(pkt);
+	else if (!git__prefixncmp(line, len, "ERR"))
+		error = err_pkt(pkt, line, len);
 	else if (*line == '#')
-		ret = comment_pkt(head, line, len);
-	else if (!git__prefixcmp(line, "ok"))
-		ret = ok_pkt(head, line, len);
-	else if (!git__prefixcmp(line, "ng"))
-		ret = ng_pkt(head, line, len);
-	else if (!git__prefixcmp(line, "unpack"))
-		ret = unpack_pkt(head, line, len);
+		error = comment_pkt(pkt, line, len);
+	else if (!git__prefixncmp(line, len, "ok"))
+		error = ok_pkt(pkt, line, len);
+	else if (!git__prefixncmp(line, len, "ng"))
+		error = ng_pkt(pkt, line, len);
+	else if (!git__prefixncmp(line, len, "unpack"))
+		error = unpack_pkt(pkt, line, len);
 	else
-		ret = ref_pkt(head, line, len);
+		error = ref_pkt(pkt, line, len);
 
-	*out = line + len;
+	*endptr = line + len;
 
-	return ret;
+	return error;
 }
 
 void git_pkt_free(git_pkt *pkt)
 {
+	if (pkt == NULL) {
+		return;
+	}
 	if (pkt->type == GIT_PKT_REF) {
 		git_pkt_ref *p = (git_pkt_ref *) pkt;
 		git__free(p->head.name);
+		git__free(p->head.symref_target);
 	}
 
 	if (pkt->type == GIT_PKT_OK) {
@@ -458,7 +531,7 @@ static int buffer_want_with_caps(const git_remote_head *head, transport_smart_ca
 {
 	git_buf str = GIT_BUF_INIT;
 	char oid[GIT_OID_HEXSZ +1] = {0};
-	unsigned int len;
+	size_t len;
 
 	/* Prefer multi_ack_detailed */
 	if (caps->multi_ack_detailed)
@@ -484,15 +557,24 @@ static int buffer_want_with_caps(const git_remote_head *head, transport_smart_ca
 	if (git_buf_oom(&str))
 		return -1;
 
-	len = (unsigned int)
-		(strlen("XXXXwant ") + GIT_OID_HEXSZ + 1 /* NUL */ +
-		 git_buf_len(&str) + 1 /* LF */);
-	git_buf_grow(buf, git_buf_len(buf) + len);
-	git_oid_fmt(oid, &head->oid);
-	git_buf_printf(buf, "%04xwant %s %s\n", len, oid, git_buf_cstr(&str));
-	git_buf_free(&str);
+	len = strlen("XXXXwant ") + GIT_OID_HEXSZ + 1 /* NUL */ +
+		 git_buf_len(&str) + 1 /* LF */;
 
-	return git_buf_oom(buf);
+	if (len > 0xffff) {
+		git_error_set(GIT_ERROR_NET,
+			"tried to produce packet with invalid length %" PRIuZ, len);
+		return -1;
+	}
+
+	git_buf_grow_by(buf, len);
+	git_oid_fmt(oid, &head->oid);
+	git_buf_printf(buf,
+		"%04xwant %s %s\n", (unsigned int)len, oid, git_buf_cstr(&str));
+	git_buf_dispose(&str);
+
+	GIT_ERROR_CHECK_ALLOC_BUF(buf);
+
+	return 0;
 }
 
 /*

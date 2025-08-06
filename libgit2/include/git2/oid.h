@@ -50,17 +50,16 @@ GIT_EXTERN(int) git_oid_fromstr(git_oid *out, const char *str);
  * Parse a hex formatted null-terminated string into a git_oid.
  *
  * @param out oid structure the result is written into.
- * @param str input hex string; must be at least 4 characters
- *      long and null-terminated.
+ * @param str input hex string; must be null-terminated.
  * @return 0 or an error code
  */
 GIT_EXTERN(int) git_oid_fromstrp(git_oid *out, const char *str);
 
 /**
- * Parse N characters of a hex formatted object id into a git_oid
+ * Parse N characters of a hex formatted object id into a git_oid.
  *
- * If N is odd, N-1 characters will be parsed instead.
- * The remaining space in the git_oid will be set to zero.
+ * If N is odd, the last byte's high nibble will be read in and the
+ * low nibble set to zero.
  *
  * @param out oid structure the result is written into.
  * @param str input hex string of at least size `length`
@@ -74,8 +73,9 @@ GIT_EXTERN(int) git_oid_fromstrn(git_oid *out, const char *str, size_t length);
  *
  * @param out oid structure the result is written into.
  * @param raw the raw input bytes to be copied.
+ * @return 0 on success or error code
  */
-GIT_EXTERN(void) git_oid_fromraw(git_oid *out, const unsigned char *raw);
+GIT_EXTERN(int) git_oid_fromraw(git_oid *out, const unsigned char *raw);
 
 /**
  * Format a git_oid into a hex string.
@@ -86,8 +86,9 @@ GIT_EXTERN(void) git_oid_fromraw(git_oid *out, const unsigned char *raw);
  *		oid digits are written; a '\\0' terminator must be added
  *		by the caller if it is required.
  * @param id oid structure to format.
+ * @return 0 on success or error code
  */
-GIT_EXTERN(void) git_oid_fmt(char *out, const git_oid *id);
+GIT_EXTERN(int) git_oid_fmt(char *out, const git_oid *id);
 
 /**
  * Format a git_oid into a partial hex string.
@@ -97,8 +98,9 @@ GIT_EXTERN(void) git_oid_fmt(char *out, const git_oid *id);
  *		will be zeroed; if not, a '\0' terminator is NOT added.
  * @param n number of characters to write into out string
  * @param id oid structure to format.
+ * @return 0 on success or error code
  */
-GIT_EXTERN(void) git_oid_nfmt(char *out, size_t n, const git_oid *id);
+GIT_EXTERN(int) git_oid_nfmt(char *out, size_t n, const git_oid *id);
 
 /**
  * Format a git_oid into a loose-object path string.
@@ -112,17 +114,22 @@ GIT_EXTERN(void) git_oid_nfmt(char *out, size_t n, const git_oid *id);
  *		oid digits are written; a '\\0' terminator must be added
  *		by the caller if it is required.
  * @param id oid structure to format.
+ * @return 0 on success, non-zero callback return value, or error code
  */
-GIT_EXTERN(void) git_oid_pathfmt(char *out, const git_oid *id);
+GIT_EXTERN(int) git_oid_pathfmt(char *out, const git_oid *id);
 
 /**
- * Format a git_oid into a newly allocated c-string.
+ * Format a git_oid into a statically allocated c-string.
  *
- * @param id the oid structure to format
- * @return the c-string; NULL if memory is exhausted. Caller must
- *			deallocate the string with git__free().
+ * The c-string is owned by the library and should not be freed
+ * by the user. If libgit2 is built with thread support, the string
+ * will be stored in TLS (i.e. one buffer per thread) to allow for
+ * concurrent calls of the function.
+ *
+ * @param oid The oid structure to format
+ * @return the c-string
  */
-GIT_EXTERN(char *) git_oid_allocfmt(const git_oid *id);
+GIT_EXTERN(char *) git_oid_tostr_s(const git_oid *oid);
 
 /**
  * Format a git_oid into a buffer as a hex format c-string.
@@ -148,8 +155,9 @@ GIT_EXTERN(char *) git_oid_tostr(char *out, size_t n, const git_oid *id);
  *
  * @param out oid structure the result is written into.
  * @param src oid structure to copy from.
+ * @return 0 on success or error code
  */
-GIT_EXTERN(void) git_oid_cpy(git_oid *out, const git_oid *src);
+GIT_EXTERN(int) git_oid_cpy(git_oid *out, const git_oid *src);
 
 /**
  * Compare two oid structures.
@@ -167,10 +175,7 @@ GIT_EXTERN(int) git_oid_cmp(const git_oid *a, const git_oid *b);
  * @param b second oid structure.
  * @return true if equal, false otherwise
  */
-GIT_INLINE(int) git_oid_equal(const git_oid *a, const git_oid *b)
-{
-	return !git_oid_cmp(a, b);
-}
+GIT_EXTERN(int) git_oid_equal(const git_oid *a, const git_oid *b);
 
 /**
  * Compare the first 'len' hexadecimal characters (packets of 4 bits)
@@ -207,7 +212,7 @@ GIT_EXTERN(int) git_oid_strcmp(const git_oid *id, const char *str);
  *
  * @return 1 if all zeros, 0 otherwise.
  */
-GIT_EXTERN(int) git_oid_iszero(const git_oid *id);
+GIT_EXTERN(int) git_oid_is_zero(const git_oid *id);
 
 /**
  * OID Shortener object
@@ -246,7 +251,7 @@ GIT_EXTERN(git_oid_shorten *) git_oid_shorten_new(size_t min_length);
  * memory-efficient.
  *
  * Attempting to add more than those OIDs will result in a
- * GITERR_INVALID error
+ * GIT_ERROR_INVALID error
  *
  * @param os a `git_oid_shorten` instance
  * @param text_id an OID in text form

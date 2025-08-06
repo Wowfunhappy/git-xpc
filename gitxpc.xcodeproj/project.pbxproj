@@ -71,6 +71,7 @@
 		AB3A27D22E43DC2D00D34771 /* NSError+Git.m in Sources */ = {isa = PBXBuildFile; fileRef = AB3A27A22E43DC2D00D34771 /* NSError+Git.m */; };
 		AB3A27D32E43DC2D00D34771 /* NSString+Git.m in Sources */ = {isa = PBXBuildFile; fileRef = AB3A27A42E43DC2D00D34771 /* NSString+Git.m */; };
 		AB3A27D42E43DC2D00D34771 /* ObjectiveGit.m in Sources */ = {isa = PBXBuildFile; fileRef = AB3A27A52E43DC2D00D34771 /* ObjectiveGit.m */; };
+		AB3A27FF2E43F6A500D34771 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB3A27FE2E43F6A500D34771 /* Security.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -224,6 +225,7 @@
 		AB3A27FB2E43DCA700D34771 /* ObjectiveGit.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ObjectiveGit.h; sourceTree = "<group>"; };
 		AB3A27FC2E43DDAE00D34771 /* EXTScope.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = EXTScope.h; path = External/EXTScope.h; sourceTree = "<group>"; };
 		AB3A27FD2E43DDAE00D34771 /* metamacros.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = metamacros.h; path = External/metamacros.h; sourceTree = "<group>"; };
+		AB3A27FE2E43F6A500D34771 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -231,6 +233,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AB3A27FF2E43F6A500D34771 /* Security.framework in Frameworks */,
 				75F64DDE18D3ACB300EF384A /* libgit2.a in Frameworks */,
 				75F64DD818D3AABA00EF384A /* libz.dylib in Frameworks */,
 				75F64DD618D3AAB300EF384A /* libssl.dylib in Frameworks */,
@@ -274,6 +277,7 @@
 		75F64D7F18D21F6900EF384A /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				AB3A27FE2E43F6A500D34771 /* Security.framework */,
 				75F64DD718D3AABA00EF384A /* libz.dylib */,
 				75F64DD518D3AAB300EF384A /* libssl.dylib */,
 				75F64DD318D3AAAB00EF384A /* libcrypto.dylib */,
