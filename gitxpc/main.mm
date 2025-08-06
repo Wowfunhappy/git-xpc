@@ -108,6 +108,20 @@ static void getDiffOfFile(xpc_connection_t conn, xpc_object_t msg, xpc_object_t 
     NSData *contents = [@(xpc_dictionary_get_string(event, "buffer")) dataUsingEncoding:NSUTF8StringEncoding];
     xpc_object_t modifications = xpc_array_create(NULL, 0);
 
+    GTBlob *newBlob = [GTBlob blobWithData:contents inRepository:repo error:nil];
+    git_blob *oldBlob = getOldBlob(repo, filepath);
+
+    git_diff_options options = GIT_DIFF_OPTIONS_INIT;
+    options.version = GIT_DIFF_OPTIONS_VERSION;
+    options.context_lines = 3;
+    options.flags = GIT_DIFF_IGNORE_WHITESPACE;
+
+    git_diff_blobs(oldBlob, NULL, newBlob.git_blob, NULL, &options, NULL, NULL, onGTDiffLine, (__bridge void*)modifications);
+
+    xpc_dictionary_set_value(msg, "diff", modifications);
+    xpc_connection_send_message(conn, msg);
+    git_blob_free(oldBlob);
+};
 
 #define SEND_AND_RETURN do { xpc_dictionary_set_int64(msg, "errline", __LINE__); xpc_connection_send_message(conn, msg); return; } while(0)
 
@@ -168,7 +182,7 @@ static void get_diff(xpc_connection_t conn, xpc_object_t msg, xpc_object_t event
             SEND_AND_RETURN;
         }
 
-        const git_oid* blobSha = &entry->id;
+        const git_oid* blobSha = &entry->oid;
         if (blobSha != NULL && git_blob_lookup(&blob, repo, blobSha) != GIT_OK)
             blob = NULL;
     } else {
@@ -328,13 +342,6 @@ static void get_diff_old(xpc_connection_t conn, xpc_object_t msg, xpc_object_t e
     xpc_connection_send_message(conn, msg);
 }
 #endif
-
-    git_diff_blobs(oldBlob, NULL, newBlob.git_blob, NULL, &options, NULL, NULL, onGTDiffLine, (__bridge void*)modifications);
-
-    xpc_dictionary_set_value(msg, "diff", modifications);
-    xpc_connection_send_message(conn, msg);
-    git_blob_free(oldBlob);
-};
 
 static void do_commit(xpc_connection_t conn, xpc_object_t msg, const char* path) {
     xpc_connection_send_message(conn, msg);

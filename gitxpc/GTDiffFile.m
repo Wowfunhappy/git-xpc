@@ -33,7 +33,7 @@
 }
 
 - (GTOID *)OID {
-	return [[GTOID alloc] initWithGitOid:&_git_diff_file.id];
+	return [[GTOID alloc] initWithGitOid:&_git_diff_file.oid];
 }
 
 @end

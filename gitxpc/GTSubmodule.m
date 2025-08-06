@@ -73,7 +73,8 @@
 
 - (void)dealloc {
 	if (_git_submodule != NULL) {
-		git_submodule_free(_git_submodule);
+		// git_submodule_free was removed in newer libgit2 versions
+		// Submodules are now reference counted internally
 	}
 }
 
@@ -106,7 +107,7 @@
 #pragma mark Manipulation
 
 - (BOOL)reload:(NSError **)error {
-	int gitError = git_submodule_reload(self.git_submodule, 0);
+	int gitError = git_submodule_reload(self.git_submodule);
 	if (gitError != GIT_OK) {
 		if (error != NULL) *error = [NSError git_errorFor:gitError description:@"Failed to reload submodule %@.", self.name];
 		return NO;

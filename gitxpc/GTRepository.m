@@ -202,7 +202,7 @@ struct GTClonePayload {
 	BOOL withCheckout = (checkout == nil ? YES : checkout.boolValue);
 
 	if (withCheckout) {
-		git_checkout_options checkoutOptions = GIT_CHECKOUT_OPTIONS_INIT;
+		git_checkout_opts checkoutOptions = GIT_CHECKOUT_OPTS_INIT;
 		checkoutOptions.checkout_strategy = GIT_CHECKOUT_SAFE_CREATE;
 		checkoutOptions.progress_cb = checkoutProgressCallback;
 		checkoutOptions.progress_payload = (__bridge void *)checkoutProgressBlock;
@@ -438,7 +438,7 @@ static int GTRepositoryForeachTagCallback(const char *name, git_oid *oid, void *
 	NSParameterAssert(targetOID != nil);
 
 	git_reference *ref;
-	int gitError = git_reference_create(&ref, self.git_repository, name.UTF8String, targetOID.git_oid, 0, signature.git_signature, message.UTF8String);
+	int gitError = git_reference_create(&ref, self.git_repository, name.UTF8String, targetOID.git_oid, 0);
 	if (gitError != GIT_OK) {
 		if (error != NULL) *error = [NSError git_errorFor:gitError description:@"Failed to create direct reference to %@", targetOID];
 		return nil;
@@ -453,7 +453,7 @@ static int GTRepositoryForeachTagCallback(const char *name, git_oid *oid, void *
 	NSParameterAssert(targetRef.name != nil);
 
 	git_reference *ref;
-	int gitError = git_reference_symbolic_create(&ref, self.git_repository, name.UTF8String, targetRef.name.UTF8String, 0, signature.git_signature, message.UTF8String);
+	int gitError = git_reference_symbolic_create(&ref, self.git_repository, name.UTF8String, targetRef.name.UTF8String, 0);
 	if (gitError != GIT_OK) {
 		if (error != NULL) *error = [NSError git_errorFor:gitError description:@"Failed to create symbolic reference to %@", targetRef];
 		return nil;
@@ -545,16 +545,15 @@ static int GTRepositoryForeachTagCallback(const char *name, git_oid *oid, void *
 	};
 
 	git_buf msg = { NULL };
-	int errorCode = git_repository_message(&msg, self.git_repository);
+	char messageBuffer[4096];
+	int errorCode = git_repository_message(messageBuffer, sizeof(messageBuffer), self.git_repository);
 	if (errorCode != GIT_OK) {
 		setErrorFromCode(errorCode);
 		git_buf_free(&msg);
 		return nil;
 	}
 
-	NSString *message = [[NSString alloc] initWithBytes:msg.ptr length:msg.size encoding:NSUTF8StringEncoding];
-
-	git_buf_free(&msg);
+	NSString *message = [[NSString alloc] initWithBytes:messageBuffer length:strlen(messageBuffer) encoding:NSUTF8StringEncoding];
 
 	return message;
 }
@@ -620,7 +619,7 @@ static int submoduleEnumerationCallback(git_submodule *git_submodule, const char
 }
 
 - (BOOL)reloadSubmodules:(NSError **)error {
-	int gitError = git_submodule_reload_all(self.git_repository, 0);
+	int gitError = git_submodule_reload_all(self.git_repository);
 	if (gitError != GIT_OK) {
 		if (error != NULL) *error = [NSError git_errorFor:gitError description:@"Failed to reload submodules."];
 		return NO;
@@ -731,7 +730,7 @@ static int checkoutNotifyCallback(git_checkout_notify_t why, const char *path, c
 - (BOOL)moveHEADToReference:(GTReference *)reference error:(NSError **)error {
 	NSParameterAssert(reference != nil);
 	
-	int gitError = git_repository_set_head(self.git_repository, reference.name.UTF8String, [self userSignatureForNow].git_signature, NULL);
+	int gitError = git_repository_set_head(self.git_repository, reference.name.UTF8String);
 	if (gitError != GIT_OK) {
 		if (error != NULL) *error = [NSError git_errorFor:gitError description:@"Failed to move HEAD to reference %@", reference.name];
 	}
@@ -742,7 +741,7 @@ static int checkoutNotifyCallback(git_checkout_notify_t why, const char *path, c
 - (BOOL)moveHEADToCommit:(GTCommit *)commit error:(NSError **)error {
 	NSParameterAssert(commit != nil);
 	
-	int gitError = git_repository_set_head_detached(self.git_repository, commit.OID.git_oid, [self userSignatureForNow].git_signature, NULL);
+	int gitError = git_repository_set_head_detached(self.git_repository, commit.OID.git_oid);
 	if (gitError != GIT_OK) {
 		if (error != NULL) *error = [NSError git_errorFor:gitError description:@"Failed to move HEAD to commit %@", commit.SHA];
 	}
@@ -752,7 +751,7 @@ static int checkoutNotifyCallback(git_checkout_notify_t why, const char *path, c
 
 - (BOOL)performCheckoutWithStrategy:(GTCheckoutStrategyType)strategy notifyFlags:(GTCheckoutNotifyFlags)notifyFlags error:(NSError **)error progressBlock:(GTCheckoutProgressBlock)progressBlock notifyBlock:(GTCheckoutNotifyBlock)notifyBlock {
 	
-	git_checkout_options checkoutOptions = GIT_CHECKOUT_OPTIONS_INIT;
+	git_checkout_opts checkoutOptions = GIT_CHECKOUT_OPTS_INIT;
 	
 	checkoutOptions.checkout_strategy = strategy;
 	checkoutOptions.progress_cb = checkoutProgressCallback;

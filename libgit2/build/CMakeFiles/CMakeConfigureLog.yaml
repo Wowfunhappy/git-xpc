@@ -1,0 +1,233 @@
+
+---
+events:
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/CMakeDetermineSystem.cmake:205 (message)"
+      - "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/CMakeLists.txt:14 (PROJECT)"
+    message: |
+      The system is: Darwin - 13.4.0 - x86_64
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
+      - "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/CMakeDetermineCCompiler.cmake:123 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/CMakeLists.txt:14 (PROJECT)"
+    message: |
+      Compiling the C compiler identification source file "CMakeCCompilerId.c" succeeded.
+      Compiler: /Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/usr/bin/cc 
+      Build flags: 
+      Id flags:  
+      
+      The output was:
+      0
+      
+      
+      Compilation of the C compiler identification source "CMakeCCompilerId.c" produced "a.out"
+      
+      The C compiler identification is AppleClang, found in:
+        /Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/3.31.7/CompilerIdC/a.out
+      
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:74 (try_compile)"
+      - "/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/CMakeLists.txt:14 (PROJECT)"
+    checks:
+      - "Detecting C compiler ABI info"
+    directories:
+      source: "/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH"
+      binary: "/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH"
+    cmakeVariables:
+      CMAKE_C_FLAGS: ""
+      CMAKE_OSX_ARCHITECTURES: ""
+      CMAKE_OSX_DEPLOYMENT_TARGET: ""
+      CMAKE_OSX_SYSROOT: "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk"
+    buildResult:
+      variable: "CMAKE_C_ABI_COMPILED"
+      cached: true
+      stdout: |
+        Change Dir: '/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH'
+        
+        Run Build Command(s): /opt/local/bin/cmake -E env VERBOSE=1 "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/usr/bin/make" -f Makefile cmTC_a15f1/fast
+        /Applications/Xcode.app/Contents/Developer/usr/bin/make  -f "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH/CMakeFiles/cmTC_a15f1.dir/build.make" "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH/CMakeFiles/cmTC_a15f1.dir/build"
+        Building C object /Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH/CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o
+        cd "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH" && "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/usr/bin/cc"   -isysroot "/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk"   -v -Wl,-v -MD -MT "/Volumes/Mavericks\\\\ VM\\\\ HD/Volumes/Mavericks\\\\ VM\\\\ HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH/CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o" -MF CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o.d -o CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o -c "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/CMakeCCompilerABI.c"
+        Apple LLVM version 6.0 (clang-600.0.51) (based on LLVM 3.5svn)
+        Target: x86_64-apple-darwin13.4.0
+        Thread model: posix
+        clang: warning: -Wl,-v: 'linker' input unused
+         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang" -cc1 -triple x86_64-apple-macosx10.9.0 -emit-obj -mrelax-all -disable-free -disable-llvm-verifier -main-file-name CMakeCCompilerABI.c -mrelocation-model pic -pic-level 2 -mdisable-fp-elim -masm-verbose -munwind-tables -target-cpu core2 -target-linker-version 241.7 -v -coverage-file /Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH/CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o -resource-dir /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/../lib/clang/6.0 -dependency-file CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o.d -sys-header-deps -MT "/Volumes/Mavericks\\\\ VM\\\\ HD/Volumes/Mavericks\\\\ VM\\\\ HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH/CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o" -isysroot /Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk -fdebug-compilation-dir /Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH -ferror-limit 19 -fmessage-length 0 -stack-protector 1 -mstackrealign -fblocks -fobjc-runtime=macosx-10.9.0 -fencode-extended-block-signature -fdiagnostics-show-option -vectorize-slp -o CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o -x c /Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/CMakeCCompilerABI.c
+        clang -cc1 version 6.0 based upon LLVM 3.5svn default target x86_64-apple-darwin13.4.0
+        ignoring nonexistent directory "/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/usr/local/include"
+        ignoring nonexistent directory "/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/Library/Frameworks"
+        #include "..." search starts here:
+        #include <...> search starts here:
+         /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/../lib/clang/6.0/include
+         /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include
+         /Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/usr/include
+         /Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/System/Library/Frameworks (framework directory)
+        End of search list.
+        Linking C executable cmTC_a15f1
+        cd "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH" && /opt/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a15f1.dir/link.txt --verbose=1
+        Apple LLVM version 6.0 (clang-600.0.51) (based on LLVM 3.5svn)
+        Target: x86_64-apple-darwin13.4.0
+        Thread model: posix
+         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld" -demangle -dynamic -arch x86_64 -macosx_version_min 10.9.0 -syslibroot /Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk -o cmTC_a15f1 -search_paths_first -headerpad_max_install_names -v CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o -lSystem /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/../lib/clang/6.0/lib/darwin/libclang_rt.osx.a
+        @(#)PROGRAM:ld  PROJECT:ld64-241.8
+        configured to support archs: armv6 armv7 armv7s arm64 i386 x86_64 x86_64h armv6m armv7m armv7em
+        Library search paths:
+        	/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/usr/lib
+        Framework search paths:
+        	/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/System/Library/Frameworks/
+        "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/usr/bin/cc"  -isysroot "/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk" -Wl,-search_paths_first -Wl,-headerpad_max_install_names  -v -Wl,-v CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o -o cmTC_a15f1
+        
+      exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:113 (message)"
+      - "/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/CMakeLists.txt:14 (PROJECT)"
+    message: |
+      Effective list of requested architectures (possibly empty)  : ""
+      Effective list of architectures found in the ABI info binary: "x86_64"
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:182 (message)"
+      - "/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/CMakeLists.txt:14 (PROJECT)"
+    message: |
+      Parsed C implicit include dir info: rv=done
+        found start of include info
+        found start of implicit include info
+          add: [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/../lib/clang/6.0/include]
+          add: [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include]
+          add: [/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/usr/include]
+        end of search list found
+        collapse include dir [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/../lib/clang/6.0/include] ==> [/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/6.0/include]
+        collapse include dir [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include] ==> [/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include]
+        collapse include dir [/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/usr/include] ==> [/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/usr/include]
+        implicit include dirs: [/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/6.0/include;/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include;/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/usr/include]
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:218 (message)"
+      - "/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/CMakeLists.txt:14 (PROJECT)"
+    message: |
+      Parsed C implicit link information:
+        link line regex: [^( *|.*[/\\])(ld[0-9]*(\\.[a-z]+)?|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        linker tool regex: [^[ 	]*(->|")?[ 	]*(([^"]*[/\\])?(ld[0-9]*(\\.[a-z]+)?))("|,| |$)]
+        ignore line: [Change Dir: '/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH']
+        ignore line: []
+        ignore line: [Run Build Command(s): /opt/local/bin/cmake -E env VERBOSE=1 "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/usr/bin/make" -f Makefile cmTC_a15f1/fast]
+        ignore line: [/Applications/Xcode.app/Contents/Developer/usr/bin/make  -f "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH/CMakeFiles/cmTC_a15f1.dir/build.make" "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH/CMakeFiles/cmTC_a15f1.dir/build"]
+        ignore line: [Building C object /Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH/CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o]
+        ignore line: [cd "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH" && "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/usr/bin/cc"   -isysroot "/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk"   -v -Wl -v -MD -MT "/Volumes/Mavericks\\\\ VM\\\\ HD/Volumes/Mavericks\\\\ VM\\\\ HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH/CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o" -MF CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o.d -o CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o -c "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/CMakeCCompilerABI.c"]
+        ignore line: [Apple LLVM version 6.0 (clang-600.0.51) (based on LLVM 3.5svn)]
+        ignore line: [Target: x86_64-apple-darwin13.4.0]
+        ignore line: [Thread model: posix]
+        ignore line: [clang: warning: -Wl -v: 'linker' input unused]
+        ignore line: [ "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang" -cc1 -triple x86_64-apple-macosx10.9.0 -emit-obj -mrelax-all -disable-free -disable-llvm-verifier -main-file-name CMakeCCompilerABI.c -mrelocation-model pic -pic-level 2 -mdisable-fp-elim -masm-verbose -munwind-tables -target-cpu core2 -target-linker-version 241.7 -v -coverage-file /Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH/CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o -resource-dir /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/../lib/clang/6.0 -dependency-file CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o.d -sys-header-deps -MT "/Volumes/Mavericks\\\\ VM\\\\ HD/Volumes/Mavericks\\\\ VM\\\\ HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH/CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o" -isysroot /Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk -fdebug-compilation-dir /Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH -ferror-limit 19 -fmessage-length 0 -stack-protector 1 -mstackrealign -fblocks -fobjc-runtime=macosx-10.9.0 -fencode-extended-block-signature -fdiagnostics-show-option -vectorize-slp -o CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o -x c /Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/CMakeCCompilerABI.c]
+        ignore line: [clang -cc1 version 6.0 based upon LLVM 3.5svn default target x86_64-apple-darwin13.4.0]
+        ignore line: [ignoring nonexistent directory "/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/usr/local/include"]
+        ignore line: [ignoring nonexistent directory "/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/Library/Frameworks"]
+        ignore line: [#include "..." search starts here:]
+        ignore line: [#include <...> search starts here:]
+        ignore line: [ /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/../lib/clang/6.0/include]
+        ignore line: [ /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include]
+        ignore line: [ /Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/usr/include]
+        ignore line: [ /Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/System/Library/Frameworks (framework directory)]
+        ignore line: [End of search list.]
+        ignore line: [Linking C executable cmTC_a15f1]
+        ignore line: [cd "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-skZvQH" && /opt/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a15f1.dir/link.txt --verbose=1]
+        ignore line: [Apple LLVM version 6.0 (clang-600.0.51) (based on LLVM 3.5svn)]
+        ignore line: [Target: x86_64-apple-darwin13.4.0]
+        ignore line: [Thread model: posix]
+        link line: [ "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld" -demangle -dynamic -arch x86_64 -macosx_version_min 10.9.0 -syslibroot /Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk -o cmTC_a15f1 -search_paths_first -headerpad_max_install_names -v CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o -lSystem /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/../lib/clang/6.0/lib/darwin/libclang_rt.osx.a]
+          arg [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld] ==> ignore
+          arg [-demangle] ==> ignore
+          arg [-dynamic] ==> ignore
+          arg [-arch] ==> ignore
+          arg [x86_64] ==> ignore
+          arg [-macosx_version_min] ==> ignore
+          arg [10.9.0] ==> ignore
+          arg [-syslibroot] ==> ignore
+          arg [/Volumes/Mavericks] ==> ignore
+          arg [VM] ==> ignore
+          arg [HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk] ==> ignore
+          arg [-o] ==> ignore
+          arg [cmTC_a15f1] ==> ignore
+          arg [-search_paths_first] ==> ignore
+          arg [-headerpad_max_install_names] ==> ignore
+          arg [-v] ==> ignore
+          arg [CMakeFiles/cmTC_a15f1.dir/CMakeCCompilerABI.c.o] ==> ignore
+          arg [-lSystem] ==> lib [System]
+          arg [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/../lib/clang/6.0/lib/darwin/libclang_rt.osx.a] ==> lib [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/../lib/clang/6.0/lib/darwin/libclang_rt.osx.a]
+        linker tool for 'C': /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld
+        Library search paths: [;/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/usr/lib]
+        Framework search paths: [;/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/System/Library/Frameworks/]
+        remove lib [System]
+        remove lib [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/../lib/clang/6.0/lib/darwin/libclang_rt.osx.a]
+        collapse library dir [/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/usr/lib] ==> [/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/usr/lib]
+        collapse framework dir [/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/System/Library/Frameworks/] ==> [/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/System/Library/Frameworks]
+        implicit libs: []
+        implicit objs: []
+        implicit dirs: [/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/usr/lib]
+        implicit fwks: [/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/System/Library/Frameworks]
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/Internal/CMakeDetermineLinkerId.cmake:40 (message)"
+      - "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:255 (cmake_determine_linker_id)"
+      - "/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/CMakeLists.txt:14 (PROJECT)"
+    message: |
+      Running the C compiler's linker: "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld" "-v"
+      @(#)PROGRAM:ld  PROJECT:ld64-241.8
+      configured to support archs: armv6 armv7 armv7s arm64 i386 x86_64 x86_64h armv6m armv7m armv7em
+      LTO support using: LLVM version 3.5svn
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/CheckCSourceCompiles.cmake:58 (cmake_check_source_compiles)"
+      - "/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/FindThreads.cmake:97 (CHECK_C_SOURCE_COMPILES)"
+      - "/Volumes/Mavericks VM HD/opt/local/share/cmake-3.31/Modules/FindThreads.cmake:163 (_threads_check_libc)"
+      - "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/CMakeLists.txt:320 (find_package)"
+    checks:
+      - "Performing Test CMAKE_HAVE_LIBC_PTHREAD"
+    directories:
+      source: "/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-dheFzZ"
+      binary: "/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-dheFzZ"
+    cmakeVariables:
+      CMAKE_C_FLAGS: "-D_GNU_SOURCE -Wall -Wextra -Wno-missing-field-initializers -Wstrict-aliasing=2 -Wstrict-prototypes  -Wno-deprecated-declarations"
+      CMAKE_MODULE_PATH: "/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/cmake/Modules/"
+      CMAKE_OSX_ARCHITECTURES: ""
+      CMAKE_OSX_DEPLOYMENT_TARGET: ""
+      CMAKE_OSX_SYSROOT: "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk"
+    buildResult:
+      variable: "CMAKE_HAVE_LIBC_PTHREAD"
+      cached: true
+      stdout: |
+        Change Dir: '/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-dheFzZ'
+        
+        Run Build Command(s): /opt/local/bin/cmake -E env VERBOSE=1 "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/usr/bin/make" -f Makefile cmTC_e7264/fast
+        /Applications/Xcode.app/Contents/Developer/usr/bin/make  -f "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-dheFzZ/CMakeFiles/cmTC_e7264.dir/build.make" "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-dheFzZ/CMakeFiles/cmTC_e7264.dir/build"
+        Building C object /Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-dheFzZ/CMakeFiles/cmTC_e7264.dir/src.c.o
+        cd "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-dheFzZ" && "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/usr/bin/cc" -DCMAKE_HAVE_LIBC_PTHREAD  -D_GNU_SOURCE -Wall -Wextra -Wno-missing-field-initializers -Wstrict-aliasing=2 -Wstrict-prototypes  -Wno-deprecated-declarations  -isysroot "/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk" -MD -MT "/Volumes/Mavericks\\\\ VM\\\\ HD/Volumes/Mavericks\\\\ VM\\\\ HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-dheFzZ/CMakeFiles/cmTC_e7264.dir/src.c.o" -MF CMakeFiles/cmTC_e7264.dir/src.c.o.d -o CMakeFiles/cmTC_e7264.dir/src.c.o -c "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-dheFzZ/src.c"
+        Linking C executable cmTC_e7264
+        cd "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/CMakeScratch/TryCompile-dheFzZ" && /opt/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_e7264.dir/link.txt --verbose=1
+        "/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/usr/bin/cc" -D_GNU_SOURCE -Wall -Wextra -Wno-missing-field-initializers -Wstrict-aliasing=2 -Wstrict-prototypes  -Wno-deprecated-declarations  -isysroot "/Volumes/Mavericks VM HD/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk" -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/cmTC_e7264.dir/src.c.o -o cmTC_e7264
+        
+      exitCode: 0
+...

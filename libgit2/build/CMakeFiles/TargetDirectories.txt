@@ -1,2 +1,7 @@
-/Users/alexgordon/Temporary/git-xpc/libgit2/build/CMakeFiles/git2.dir
-/Users/alexgordon/Temporary/git-xpc/libgit2/build/CMakeFiles/libgit2_clar.dir
+/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/git2.dir
+/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/edit_cache.dir
+/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/rebuild_cache.dir
+/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/list_install_components.dir
+/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/install.dir
+/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/install/local.dir
+/Volumes/Mavericks VM HD/Volumes/Mavericks VM HD/Users/jonathan/Desktop/git-xpc/libgit2/build/CMakeFiles/install/strip.dir
